@@ -1,0 +1,60 @@
+import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { Message } from '../../common/api-response';
+import { Auth, CurrentUser, Public, ResponseMessage } from '../../common/decorators';
+import { AuthService } from '../../modules/auth/auth.service';
+import { LogoutDto, RefreshTokenDto } from '../shared/shared.dto';
+import { IdentifierDto, VerifyOtpDto } from './dto/customer.dto';
+
+@ApiTags('Customer · Auth')
+@Controller('auth')
+export class CustomerAuthController {
+  constructor(private readonly auth: AuthService) {}
+
+  @Public()
+  @Post('lookup')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Does this phone/email have an account, and which login method applies?' })
+  lookup(@Body() dto: IdentifierDto) {
+    return this.auth.lookup(dto.identifier);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('otp/send')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Send a one-time password by SMS (phone) or email' })
+  async sendOtp(@Body() dto: IdentifierDto) {
+    await this.auth.sendCustomerOtp(dto.identifier);
+    return new Message('OTP sent.');
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('otp/verify')
+  @HttpCode(200)
+  @ResponseMessage('Signed in.')
+  @ApiOperation({ summary: 'Verify the OTP. Creates the account on first sign-in and returns tokens.' })
+  verifyOtp(@Body() dto: VerifyOtpDto) {
+    return this.auth.verifyCustomerOtp(dto.identifier, dto.otp, dto.deviceId);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('token/refresh')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Exchange a refresh token for a new token pair (the old refresh token is revoked)' })
+  refresh(@Body() dto: RefreshTokenDto) {
+    return this.auth.refresh(dto.refreshToken);
+  }
+
+  @Auth('CUSTOMER')
+  @Post('logout')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Sign out; optionally unregister this device for push' })
+  async logout(@CurrentUser('id') userId: string, @Body() dto: LogoutDto) {
+    await this.auth.logout(userId, dto.pushToken);
+    return new Message('Signed out.');
+  }
+}

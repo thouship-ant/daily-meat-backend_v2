@@ -1,0 +1,126 @@
+# Production stack for a single VPS.
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+# The API is published on 127.0.0.1:$PORT only; the server's nginx terminates HTTPS and proxies to it
+# (infra/nginx-daily-meat.conf). Postgres and Redis are reachable only on the internal Docker network.
+name: daily-meat-v2
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      TZ: Asia/Kolkata
+    # User, password and database name are read from DATABASE_URL so there is a single place to set them.
+    # The password inside the URL is percent-encoded (# = %23, $ = %24, @ = %40 ...); it is decoded here.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        u="$${DATABASE_URL#*://}"
+        creds="$${u%%@*}"
+        rest="$${u#*@}"
+        export POSTGRES_USER="$${creds%%:*}"
+        pw="$${creds#*:}"
+        bs='\'
+        export POSTGRES_PASSWORD="$$(printf '%b' "$${pw//%/$${bs}x}")"
+        name="$${rest#*/}"
+        export POSTGRES_DB="$${name%%\?*}"
+        exec docker-entrypoint.sh postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d \"$$DATABASE_URL\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-off jobs (not started by `up`):
+  #   docker compose -f docker-compose.prod.yml --env-file .env run --rm migrate
+  #   ADMIN_EMAIL=... ADMIN_PASSWORD=... docker compose -f docker-compose.prod.yml --env-file .env run --rm -e ADMIN_EMAIL -e ADMIN_PASSWORD tools npx ts-node prisma/seed-admin.ts
+  migrate:
+    profiles: ["tools"]
+    build: { context: ., target: build }
+    command: npx prisma migrate deploy
+    environment: &dburl
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+    depends_on:
+      db: { condition: service_healthy }
+
+  tools:
+    profiles: ["tools"]
+    build: { context: ., target: build }
+    environment: *dburl
+    depends_on:
+      db: { condition: service_healthy }
+
+  # Shared cache (public catalog, auth lookups, OTPs, last driver positions). Required in production so OTPs and
+  # sessions behave the same however many API containers run.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: { context: ., target: runtime }
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORT:-3000}:${PORT:-3000}"
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      <<: *dburl
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      APP_BASE_URL: ${APP_BASE_URL:?set APP_BASE_URL in .env}
+      API_PREFIX: ${API_PREFIX:-api/v1}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?set REFRESH_TOKEN_SECRET in .env}
+      REFRESH_TOKEN_EXPIRES_IN: ${REFRESH_TOKEN_EXPIRES_IN:-30d}
+      COD_MAX_AMOUNT: ${COD_MAX_AMOUNT:-2000}
+      OTP_TTL_SECONDS: ${OTP_TTL_SECONDS:-300}
+      OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS:-5}
+      MAX_ACCOUNTS_PER_DEVICE: ${MAX_ACCOUNTS_PER_DEVICE:-2}
+      TEST_ACCOUNT_PHONE_MARKER: ${TEST_ACCOUNT_PHONE_MARKER:-}
+      TEST_ACCOUNT_OTP: ${TEST_ACCOUNT_OTP:-123456}
+      ARRIVAL_RADIUS_METERS: ${ARRIVAL_RADIUS_METERS:-150}
+      CASHFREE_ENV: ${CASHFREE_ENV:-PROD}
+      CASHFREE_APP_ID: ${CASHFREE_APP_ID:-}
+      CASHFREE_SECRET_KEY: ${CASHFREE_SECRET_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMS_FORTIUS_API_KEY: ${SMS_FORTIUS_API_KEY:-}
+      SMS_FORTIUS_SENDER_ID: ${SMS_FORTIUS_SENDER_ID:-}
+      SMS_FORTIUS_TEMPLATE_ID: ${SMS_FORTIUS_TEMPLATE_ID:-}
+      SMS_FORTIUS_BASE_URL: ${SMS_FORTIUS_BASE_URL:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+      ANDROID_ALARM_CHANNEL_ID: ${ANDROID_ALARM_CHANNEL_ID:-order-alarm}
+      ANDROID_NOTIFICATION_CHANNEL_ID: ${ANDROID_NOTIFICATION_CHANNEL_ID:-}
+      PUSH_TOKEN_MAX_CHARS: ${PUSH_TOKEN_MAX_CHARS:-255}
+      APP_ANDROID_LATEST_BUILD: ${APP_ANDROID_LATEST_BUILD:-0}
+      APP_ANDROID_STORE_URL: ${APP_ANDROID_STORE_URL:-}
+      APP_IOS_LATEST_BUILD: ${APP_IOS_LATEST_BUILD:-0}
+      APP_IOS_STORE_URL: ${APP_IOS_STORE_URL:-}
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+volumes:
+  pgdata:

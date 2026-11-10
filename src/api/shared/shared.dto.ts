@@ -43,3 +43,9 @@ export class UpdateProfileDto {
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @Length(6, 20) phone?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() promotionalNotifications?: boolean;
 }
+
+export class ContactMessageDto {
+  @ApiProperty() @Transform(trim) @IsString() @Length(1, 100) name: string;
+  @ApiProperty() @Transform(trim) @IsEmail() email: string;
+  @ApiProperty() @Transform(trim) @IsString() @Length(1, 2000) message: string;
+}

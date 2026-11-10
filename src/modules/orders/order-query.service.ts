@@ -233,6 +233,93 @@ export class OrderQueryService {
     return order;
   }
 
+  /**
+   * Sales by category for the admin's Category Analytics. Delivered orders count in the period they were delivered,
+   * cancelled ones in the period they were cancelled. An order with items in several categories counts once in each
+   * category, so the overall distinct counts are returned too (the grand total must not add the categories up).
+   */
+  async categoryAnalytics(period: string | undefined, startDate?: string, endDate?: string) {
+    const range = istRange(period, startDate, endDate);
+    const inst = (r: DateRange): Prisma.DateTimeFilter => (r.end ? { gte: r.start, lt: r.end } : { gte: r.start });
+    const orderWhere: Prisma.OrderWhereInput = range
+      ? {
+          OR: [
+            { status: 'DELIVERED', deliveredAt: inst(range) },
+            { status: 'DELIVERED', deliveredAt: null, createdAt: inst(range) },
+            { status: 'CANCELLED', updatedAt: inst(range) },
+          ],
+        }
+      : { status: { in: ['DELIVERED', 'CANCELLED'] } };
+
+    const [categories, products, items] = await Promise.all([
+      this.prisma.category.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
+      this.prisma.product.findMany({ select: { categoryId: true, variants: { select: { inStock: true } } } }),
+      this.prisma.orderItem.findMany({
+        where: { order: orderWhere },
+        select: {
+          orderId: true, quantity: true, price: true, costPriceSnapshot: true,
+          order: { select: { status: true } },
+          product: { select: { categoryId: true } },
+        },
+      }),
+    ]);
+
+    const stats = new Map(categories.map((c) => [c.id, {
+      id: c.id, name: c.name, image_url: c.imageUrl, imageUrl: c.imageUrl,
+      grossSales: 0, netProfit: 0, cancelledRevenue: 0, inStockVariants: 0, totalVariants: 0,
+      delivered: new Set<string>(), cancelled: new Set<string>(),
+    }]));
+    for (const p of products) {
+      const st = stats.get(p.categoryId);
+      if (!st) continue;
+      for (const v of p.variants) { st.totalVariants++; if (v.inStock) st.inStockVariants++; }
+    }
+    const overallDelivered = new Set<string>();
+    const overallCancelled = new Set<string>();
+    for (const it of items) {
+      const st = stats.get(it.product?.categoryId);
+      if (!st) continue;
+      const qty = it.quantity || 1;
+      const line = Number(it.price) * qty;
+      if (it.order.status === 'DELIVERED') {
+        st.grossSales += line;
+        st.netProfit += line - Number(it.costPriceSnapshot ?? 0) * qty;
+        st.delivered.add(it.orderId);
+        overallDelivered.add(it.orderId);
+      } else if (it.order.status === 'CANCELLED') {
+        st.cancelledRevenue += line;
+        st.cancelled.add(it.orderId);
+        overallCancelled.add(it.orderId);
+      }
+    }
+    return [...stats.values()].map(({ delivered, cancelled, ...st }) => ({
+      ...st,
+      totalRevenue: st.grossSales,
+      totalOrdersCount: delivered.size,
+      cancelledOrdersCount: cancelled.size,
+      overallTotalOrdersCount: overallDelivered.size,
+      overallCancelledOrdersCount: overallCancelled.size,
+    }));
+  }
+
+  /** Lifetime numbers for the admin's driver list / page: orders on the road now and orders delivered. */
+  async driverCounts(driverIds: string[]): Promise<Map<string, { active: number; completed: number }>> {
+    const out = new Map<string, { active: number; completed: number }>(driverIds.map((id) => [id, { active: 0, completed: 0 }]));
+    if (!driverIds.length) return out;
+    const rows = await this.prisma.order.groupBy({
+      by: ['driverId', 'status'],
+      where: { driverId: { in: driverIds }, status: { in: [...ACTIVE_DELIVERY_STATUSES, 'DELIVERED'] } },
+      _count: { _all: true },
+    });
+    for (const r of rows) {
+      const c = out.get(r.driverId!);
+      if (!c) continue;
+      if (r.status === 'DELIVERED') c.completed += r._count._all;
+      else c.active += r._count._all;
+    }
+    return out;
+  }
+
   async driverStats(driverId: string) {
     const today = startOfIstDay();
     const weekStart = new Date(today.getTime() - 6 * 86_400_000);

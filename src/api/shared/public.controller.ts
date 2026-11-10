@@ -1,8 +1,9 @@
-import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Post, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { Public } from '../../common/decorators';
+import { ContactMessageDto } from './shared.dto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 /** Unauthenticated endpoints shared by all apps. */
@@ -25,6 +26,13 @@ export class PublicController {
       res.status(HttpStatus.SERVICE_UNAVAILABLE);
       return { status: 'degraded', uptime: Math.round(process.uptime()), database: 'down' };
     }
+  }
+
+  @Post('contact')
+  @ApiOperation({ summary: 'Website contact form' })
+  async contact(@Body() dto: ContactMessageDto) {
+    const saved = await this.prisma.contactMessage.create({ data: { name: dto.name, email: dto.email, message: dto.message } });
+    return { id: saved.id, message: 'Your message has been received. We will get back to you shortly!' };
   }
 
   @Get('app-version')

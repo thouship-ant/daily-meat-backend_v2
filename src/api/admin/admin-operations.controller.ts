@@ -54,6 +54,19 @@ export class AdminDashboardController {
   }
 }
 
+@ApiTags('Admin · Analysis')
+@Auth('ADMIN')
+@Controller('analysis')
+export class AdminAnalysisController {
+  constructor(private readonly queries: OrderQueryService) {}
+
+  @Get('category-wise')
+  @ApiOperation({ summary: 'Gross sales, profit and distinct order counts per category for a period' })
+  categoryWise(@Query() q: DashboardQueryDto) {
+    return this.queries.categoryAnalytics(q.filter, q.startDate, q.endDate);
+  }
+}
+
 @ApiTags('Admin · Orders')
 @Auth('ADMIN')
 @Controller('orders')
@@ -154,8 +167,14 @@ export class AdminDriversController {
   @Get()
   async list(@Query() q: UsersQueryDto) {
     const { items, total } = await this.users.listByRole('DRIVER', { skip: q.skip, take: q.limit, search: q.search, isActive: q.isActive });
+    const counts = await this.queries.driverCounts(items.map((u) => u.id));
     return new Paginated(
-      items.map((u) => ({ ...toUserView(u), deliveries: u._count.deliveries })),
+      items.map((u) => ({
+        ...toUserView(u),
+        deliveries: u._count.deliveries,
+        activeOrdersCount: counts.get(u.id)?.active ?? 0,
+        completedOrdersCount: counts.get(u.id)?.completed ?? 0,
+      })),
       total,
       q.page,
       q.limit,
@@ -166,8 +185,19 @@ export class AdminDriversController {
   @ApiOperation({ summary: 'Driver profile with today\'s numbers and the orders currently on the road' })
   async get(@Param('id', ParseUUIDPipe) id: string) {
     const user = await this.users.getById(id);
-    const [stats, active] = await Promise.all([this.queries.driverStats(id), this.queries.activeForDriver(id)]);
-    return { ...toUserView(user), stats, activeOrders: active.map((o) => presentOrder(o, ADMIN_VIEW)) };
+    const [stats, active, counts, done] = await Promise.all([
+      this.queries.driverStats(id),
+      this.queries.activeForDriver(id),
+      this.queries.driverCounts([id]),
+      this.queries.completedForDriver(id, 0, 50),
+    ]);
+    const c = counts.get(id)!;
+    return {
+      ...toUserView(user),
+      stats: { ...stats, activeOrdersCount: c.active, completedOrdersCount: c.completed },
+      activeOrders: active.map((o) => presentOrder(o, ADMIN_VIEW)),
+      completedOrders: done.items.map((o) => presentOrder(o, ADMIN_VIEW)),
+    };
   }
 
   @Patch(':id/status')

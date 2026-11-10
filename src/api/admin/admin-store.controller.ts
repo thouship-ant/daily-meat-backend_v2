@@ -1,16 +1,25 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiException } from '../../common/api-error';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { SellerBillsService } from '../../modules/catalog/seller-bills.service';
 import { Message, Paginated } from '../../common/api-response';
 import { Auth, ResponseMessage } from '../../common/decorators';
 import { CouponsService } from '../../modules/coupons/coupons.service';
 import { HubsService } from '../../modules/hubs/hubs.service';
+import { MarketingService } from '../../modules/notifications/marketing.service';
 import { DeliverySlotsService } from '../../modules/orders/delivery-slots.service';
 import { SupportService } from '../../modules/support/support.service';
 import {
+  BroadcastDto,
   CouponDto,
+  ContactStatusDto,
   CouponsQueryDto,
+  CreateSellerBillDto,
+  RequiredItemsQueryDto,
   HubDto,
   PauseAllHubsDto,
+  ScheduledPlanDto,
   SlotDto,
   TicketsQueryDto,
   UpdateCouponDto,
@@ -137,5 +146,107 @@ export class AdminTicketsController {
   @ApiOperation({ summary: 'Reply to a ticket and/or change its status' })
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTicketDto) {
     return this.support.adminUpdate(id, dto);
+  }
+}
+
+@ApiTags('Admin · Marketing')
+@Auth('ADMIN')
+@Controller('marketing')
+export class AdminMarketingController {
+  constructor(private readonly marketing: MarketingService) {}
+
+  @Post('send')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Promotional push to all customers, or only those with no recent order' })
+  send(@Body() dto: BroadcastDto) {
+    return this.marketing.broadcast(dto);
+  }
+
+  @Get('scheduled')
+  async list() {
+    return { plans: await this.marketing.listPlans() };
+  }
+
+  @Post('scheduled')
+  @ResponseMessage('Plan saved.')
+  async create(@Body() dto: ScheduledPlanDto) {
+    return { plan: await this.marketing.createPlan(dto) };
+  }
+
+  @Patch('scheduled/:id')
+  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: ScheduledPlanDto) {
+    return { plan: await this.marketing.updatePlan(id, dto) };
+  }
+
+  @Delete('scheduled/:id')
+  @ResponseMessage('Deleted.')
+  async remove(@Param('id', ParseIntPipe) id: number) {
+    await this.marketing.deletePlan(id);
+    return { deleted: true };
+  }
+
+  @Post('scheduled/:id/test')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Send the plan message to the admins phones only' })
+  test(@Param('id', ParseIntPipe) id: number) {
+    return this.marketing.testPlan(id);
+  }
+}
+
+@ApiTags('Admin · Contact messages')
+@Auth('ADMIN')
+@Controller('contact')
+export class AdminContactController {
+  constructor(private readonly prisma: PrismaService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Messages sent through the website contact form, newest first' })
+  async list() {
+    return { messages: await this.prisma.contactMessage.findMany({ orderBy: { createdAt: 'desc' } }) };
+  }
+
+  @Patch(':id/status')
+  async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ContactStatusDto) {
+    const found = await this.prisma.contactMessage.findUnique({ where: { id }, select: { id: true } });
+    if (!found) throw ApiException.notFound('Contact message');
+    return { message: await this.prisma.contactMessage.update({ where: { id }, data: { status: dto.status } }) };
+  }
+
+  @Delete(':id')
+  @ResponseMessage('Contact message deleted.')
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    const found = await this.prisma.contactMessage.findUnique({ where: { id }, select: { id: true } });
+    if (!found) throw ApiException.notFound('Contact message');
+    await this.prisma.contactMessage.delete({ where: { id } });
+    return { deleted: true };
+  }
+}
+
+@ApiTags('Admin · Supplier bills')
+@Auth('ADMIN')
+@Controller('seller-bills')
+export class AdminSellerBillsController {
+  constructor(private readonly bills: SellerBillsService) {}
+
+  @Post()
+  @ResponseMessage('Seller bill generated successfully')
+  create(@Body() dto: CreateSellerBillDto) {
+    return this.bills.create(dto);
+  }
+
+  @Get()
+  list() {
+    return this.bills.list();
+  }
+
+  @Get('required-items')
+  @ApiOperation({ summary: 'Active products with the quantity the open orders still need' })
+  required(@Query() q: RequiredItemsQueryDto) {
+    return this.bills.requiredItems(q.date);
+  }
+
+  @Get(':id')
+  get(@Param('id') id: string) {
+    return this.bills.get(id);
   }
 }

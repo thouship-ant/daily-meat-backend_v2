@@ -11,12 +11,13 @@ import { UsersModule } from '../../modules/users/users.module';
 import { AdminAuthController } from './admin-auth.controller';
 import { AdminCatalogController } from './admin-catalog.controller';
 import {
+  AdminAnalysisController,
   AdminCustomersController,
   AdminDashboardController,
   AdminDriversController,
   AdminOrdersController,
 } from './admin-operations.controller';
-import { AdminCouponsController, AdminHubsController, AdminSlotsController, AdminTicketsController } from './admin-store.controller';
+import { AdminContactController, AdminCouponsController, AdminHubsController, AdminMarketingController, AdminSellerBillsController, AdminSlotsController, AdminTicketsController } from './admin-store.controller';
 
 /** Admin API surface (back-office app). Mounted at /admin. */
 @Module({
@@ -24,6 +25,10 @@ import { AdminCouponsController, AdminHubsController, AdminSlotsController, Admi
   controllers: [
     AdminAuthController,
     AdminDashboardController,
+    AdminAnalysisController,
+    AdminMarketingController,
+    AdminContactController,
+    AdminSellerBillsController,
     AdminOrdersController,
     AdminDriversController,
     AdminCustomersController,

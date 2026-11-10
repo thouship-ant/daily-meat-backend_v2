@@ -92,6 +92,51 @@ export class DashboardQueryDto {
   @ApiPropertyOptional() @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) endDate?: string;
 }
 
+export class ContactStatusDto {
+  @ApiProperty({ enum: ['UNREAD', 'READ', 'REPLIED'] }) @IsIn(['UNREAD', 'READ', 'REPLIED']) status: 'UNREAD' | 'READ' | 'REPLIED';
+}
+
+export class SellerBillItemDto {
+  @ApiProperty() @IsUUID() productId: string;
+  @ApiProperty() @Transform(trim) @IsString() @Length(1, 255) productName: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() variantId?: string | null;
+  @ApiPropertyOptional() @IsOptional() @IsString() variantName?: string | null;
+  @ApiProperty() @Type(() => Number) @IsInt() @Min(1) quantity: number;
+}
+
+export class CreateSellerBillDto {
+  @ApiProperty({ type: [SellerBillItemDto] }) @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => SellerBillItemDto) items: SellerBillItemDto[];
+  @ApiPropertyOptional() @IsOptional() @IsString() notes?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() categoryName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() supplierName?: string;
+}
+
+export class RequiredItemsQueryDto {
+  @ApiPropertyOptional({ example: '2026-11-11' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) date?: string;
+}
+
+// ---------- marketing ----------
+
+export class BroadcastDto {
+  @ApiPropertyOptional({ enum: ['ALL', 'INACTIVE'] }) @IsOptional() @IsIn(['ALL', 'INACTIVE']) target?: string;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) inactiveDays?: number;
+  @ApiProperty() @Transform(trim) @IsString() @Length(1, 100) title: string;
+  @ApiProperty() @Transform(trim) @IsString() @Length(1, 500) body: string;
+}
+
+export class ScheduledPlanDto {
+  @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @Length(1, 100) name?: string;
+  @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @Length(1, 100) title?: string;
+  @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @Length(1, 500) body?: string;
+  @ApiPropertyOptional({ enum: ['ALL', 'INACTIVE'] }) @IsOptional() @IsIn(['ALL', 'INACTIVE']) audience?: string;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) inactiveDays?: number | null;
+  @ApiPropertyOptional({ example: '2026-11-10' }) @IsOptional() @IsString() startDate?: string;
+  @ApiPropertyOptional({ example: '2026-11-12' }) @IsOptional() @IsString() endDate?: string;
+  @ApiPropertyOptional({ example: '10:00' }) @IsOptional() @IsString() windowStart?: string;
+  @ApiPropertyOptional({ example: '11:00' }) @IsOptional() @IsString() windowEnd?: string;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
 // ---------- people ----------
 
 export class CreateDriverDto {

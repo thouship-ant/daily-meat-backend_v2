@@ -45,6 +45,12 @@ export class VerifyOtpDto extends IdentifierDto {
 
 export class SignupLocationDto {
   @ApiProperty({ example: 'Crawford, Tamil Nadu' }) @Transform(trim) @IsString() @Length(1, 255) location: string;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsLatitude() latitude?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsLongitude() longitude?: number;
+}
+
+export class ChangeOrderAddressDto {
+  @ApiProperty({ description: 'One of my saved addresses' }) @IsUUID() addressId: string;
 }
 
 // ---------- catalog ----------

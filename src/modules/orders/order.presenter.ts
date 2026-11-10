@@ -46,6 +46,7 @@ export function presentOrder(o: OrderWithRelations, opts: PresentOptions = {}) {
     },
     deliveryInstruction: o.deliveryInstruction,
     failureReason: o.failureReason,
+    addressChangeRequestedAt: o.addressChangeRequestedAt,
     address: {
       title: o.addressTitle,
       street: o.addressStreet,

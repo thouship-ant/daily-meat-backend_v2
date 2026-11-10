@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AddressesModule } from '../../modules/addresses/addresses.module';
 import { AuthModule } from '../../modules/auth/auth.module';
 import { CatalogModule } from '../../modules/catalog/catalog.module';
 import { CouponsModule } from '../../modules/coupons/coupons.module';
@@ -19,7 +20,7 @@ import { AdminCouponsController, AdminHubsController, AdminSlotsController, Admi
 
 /** Admin API surface (back-office app). Mounted at /admin. */
 @Module({
-  imports: [AuthModule, UsersModule, OrdersModule, CatalogModule, HubsModule, CouponsModule, SupportModule, NotificationsModule],
+  imports: [AddressesModule, AuthModule, UsersModule, OrdersModule, CatalogModule, HubsModule, CouponsModule, SupportModule, NotificationsModule],
   controllers: [
     AdminAuthController,
     AdminDashboardController,

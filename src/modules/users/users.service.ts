@@ -110,11 +110,48 @@ export class UsersService {
     return this.update(id, data);
   }
 
-  async setSignupLocationOnce(id: string, location: string) {
+  async setSignupLocationOnce(id: string, location: string, latitude?: number, longitude?: number) {
     await this.prisma.user.updateMany({
       where: { id, role: 'CUSTOMER', signupLocation: null },
-      data: { signupLocation: location.slice(0, 255) },
+      data: {
+        signupLocation: location.slice(0, 255),
+        ...(latitude !== undefined && longitude !== undefined ? { signupLatitude: latitude, signupLongitude: longitude } : {}),
+      },
     });
+  }
+
+  // ---------- activity (last login / last seen) ----------
+
+  private readonly activityWrittenAt = new Map<string, number>();
+
+  /** The user just signed in (counts as activity too). Never fails the request. */
+  recordLogin(id: string): void {
+    this.activityWrittenAt.set(id, Date.now());
+    this.prisma.user.update({ where: { id }, data: { lastLoginAt: new Date(), lastActiveAt: new Date() } }).catch(() => {});
+  }
+
+  /** The user's app called the API: at most one database write per user every 10 minutes. Never fails the request. */
+  recordActivity(id: string): void {
+    const now = Date.now();
+    if (now - (this.activityWrittenAt.get(id) ?? 0) < 10 * 60 * 1000) return;
+    this.activityWrittenAt.set(id, now);
+    this.prisma.user.update({ where: { id }, data: { lastActiveAt: new Date() } }).catch(() => {});
+  }
+
+  /** Last sign-in, last activity and where the app was first opened (for the admin's customer page). */
+  async getActivity(id: string) {
+    const u = await this.prisma.user.findUnique({
+      where: { id },
+      select: { lastLoginAt: true, lastActiveAt: true, signupLocation: true, signupLatitude: true, signupLongitude: true },
+    });
+    return {
+      lastLoginAt: u?.lastLoginAt ?? null,
+      lastActiveAt: u?.lastActiveAt ?? null,
+      registeredLocation:
+        u && (u.signupLocation || u.signupLatitude != null)
+          ? { text: u.signupLocation, latitude: u.signupLatitude, longitude: u.signupLongitude }
+          : null,
+    };
   }
 
   /** Customer "delete my account": removes personal data but keeps the row so past orders still add up. */

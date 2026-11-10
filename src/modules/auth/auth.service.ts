@@ -87,6 +87,7 @@ export class AuthService {
     }
 
     if (!user.isActive) throw ApiException.forbidden('Account deactivated. Please contact support.');
+    this.users.recordLogin(user.id);
     return { user: toUserView(user), tokens: await this.issueTokens(user), isNewUser };
   }
 
@@ -104,6 +105,7 @@ export class AuthService {
     if (!user.isActive) {
       throw new ApiException(ErrorCode.ACCOUNT_DEACTIVATED, 'Account deactivated. Please contact support.', 403);
     }
+    this.users.recordLogin(user.id);
     return { user: toUserView(user), tokens: await this.issueTokens(user) };
   }
 
@@ -116,6 +118,9 @@ export class AuthService {
     } catch {
       throw ApiException.unauthorized('Invalid or expired refresh token.');
     }
+    // A token issued by the v1 backend has no `sub` (it carries `id`): it can never be renewed here, so answer 401
+    // and let the app sign in again instead of failing with a 500.
+    if (!payload?.sub) throw ApiException.unauthorized('Invalid or expired refresh token.');
     const user = await this.users.findById(payload.sub);
     if (!user || !user.refreshToken || user.refreshToken !== this.digest(refreshToken)) {
       throw ApiException.unauthorized('Invalid or expired refresh token.');

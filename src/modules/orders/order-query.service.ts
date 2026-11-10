@@ -40,13 +40,18 @@ export class OrderQueryService {
   // Customer
   // =====================================================================
 
-  async listForCustomer(userId: string, skip: number, take: number) {
-    const where: Prisma.OrderWhereInput = { userId };
+  async listForCustomer(userId: string, skip: number, take: number, status?: OrderStatus) {
+    const where: Prisma.OrderWhereInput = { userId, ...(status ? { status } : {}) };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.order.findMany({ where, include: ORDER_INCLUDE, orderBy: { createdAt: 'desc' }, skip, take }),
       this.prisma.order.count({ where }),
     ]);
     return { items, total };
+  }
+
+  /** Delivered orders this customer placed before `before` (the admin order page: "N previous orders"). */
+  countDeliveredBefore(userId: string, before: Date) {
+    return this.prisma.order.count({ where: { userId, status: 'DELIVERED', createdAt: { lt: before } } });
   }
 
   async getForCustomer(userId: string, id: string): Promise<OrderWithRelations> {

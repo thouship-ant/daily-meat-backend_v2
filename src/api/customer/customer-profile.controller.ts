@@ -42,7 +42,7 @@ export class CustomerProfileController {
   @Put('signup-location')
   @ApiOperation({ summary: 'Remember roughly where the customer first opened the app (set once)' })
   async signupLocation(@CurrentUser('id') id: string, @Body() dto: SignupLocationDto) {
-    await this.users.setSignupLocationOnce(id, dto.location);
+    await this.users.setSignupLocationOnce(id, dto.location, dto.latitude, dto.longitude);
     return new Message('OK');
   }
 }

@@ -14,6 +14,8 @@ export const DomainEvents = {
   DriverArrived: 'driver.arrived',
   DriverLocationUpdated: 'driver.location_updated',
   UserRegistered: 'user.registered',
+  OrderAddressChanged: 'order.address_changed',
+  AddressUpdateRequested: 'order.address_update_requested',
 } as const;
 
 export type OrderActor = 'CUSTOMER' | 'ADMIN' | 'DRIVER' | 'SYSTEM';
@@ -62,4 +64,12 @@ export interface DriverLocationEvent {
   longitude: number;
   speed?: number;
   heading?: number;
+}
+export interface OrderAddressChangedEvent {
+  order: OrderSummary;
+}
+export interface AddressUpdateRequestedEvent {
+  userId: string;
+  orderId: string;
+  message: string;
 }

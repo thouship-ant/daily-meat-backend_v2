@@ -1,14 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Message, Paginated } from '../../common/api-response';
 import { Auth, AuthUser, CurrentUser, Public, ResponseMessage } from '../../common/decorators';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { DeliverySlotsService } from '../../modules/orders/delivery-slots.service';
+import { OrderAddressService } from '../../modules/orders/order-address.service';
 import { OrderLifecycleService } from '../../modules/orders/order-lifecycle.service';
 import { OrderPlacementService } from '../../modules/orders/order-placement.service';
 import { OrderQueryService } from '../../modules/orders/order-query.service';
 import { presentOrder } from '../../modules/orders/order.presenter';
-import { CancelOrderDto, PlaceOrderDto, QuoteDto } from './dto/customer.dto';
+import { CancelOrderDto, ChangeOrderAddressDto, PlaceOrderDto, QuoteDto } from './dto/customer.dto';
 
 @ApiTags('Customer · Orders')
 @Auth('CUSTOMER')
@@ -19,6 +20,7 @@ export class CustomerOrdersController {
     private readonly lifecycle: OrderLifecycleService,
     private readonly queries: OrderQueryService,
     private readonly slots: DeliverySlotsService,
+    private readonly orderAddress: OrderAddressService,
   ) {}
 
   @Public()
@@ -66,6 +68,13 @@ export class CustomerOrdersController {
   async cancel(@CurrentUser('id') userId: string, @Param('id') id: string, @Body() dto: CancelOrderDto) {
     const { order, refund } = await this.lifecycle.cancelByCustomer(userId, id, dto.reason);
     return new Message('Order cancelled.', { order: presentOrder(order), refund });
+  }
+
+  @Patch('orders/:id/address')
+  @ApiOperation({ summary: 'Send an order that has not left the shop to another saved address (only after the shop asked)' })
+  async changeAddress(@CurrentUser('id') userId: string, @Param('id') id: string, @Body() dto: ChangeOrderAddressDto) {
+    await this.orderAddress.customerChange(userId, id, dto.addressId);
+    return new Message('Delivery address updated.', { order: presentOrder(await this.queries.getForCustomer(userId, id)) });
   }
 
   @Delete('orders/:id/draft')

@@ -4,6 +4,8 @@ import { ApiException } from '../../common/api-error';
 import { Message, Paginated } from '../../common/api-response';
 import { Auth, CurrentUser, ResponseMessage } from '../../common/decorators';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { AddressesService } from '../../modules/addresses/addresses.service';
+import { OrderAddressService } from '../../modules/orders/order-address.service';
 import { ManualOrderService } from '../../modules/orders/manual-order.service';
 import { OrderLifecycleService } from '../../modules/orders/order-lifecycle.service';
 import { OrderQueryService } from '../../modules/orders/order-query.service';
@@ -15,8 +17,10 @@ import {
   AdminOrdersQueryDto,
   AssignDriverDto,
   CreateDriverDto,
+  CustomerDetailQueryDto,
   DashboardQueryDto,
   ManualOrderDto,
+  OrderAddressDto,
   SetActiveDto,
   UpdateOrderStatusDto,
   UsersQueryDto,
@@ -58,6 +62,7 @@ export class AdminOrdersController {
     private readonly queries: OrderQueryService,
     private readonly lifecycle: OrderLifecycleService,
     private readonly manual: ManualOrderService,
+    private readonly orderAddress: OrderAddressService,
   ) {}
 
   @Get()
@@ -86,6 +91,29 @@ export class AdminOrdersController {
   async get(@Param('id') id: string) {
     const order = await this.queries.getForAdmin(id);
     return { ...presentOrder(order, ADMIN_VIEW), allowedNextStatuses: allowedNext(order.status, 'ADMIN') };
+  }
+
+  @Post(':id/notify-address')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Ask the customer (push) to correct this order\'s delivery address' })
+  async notifyAddress(@Param('id') id: string) {
+    const result = await this.orderAddress.askCustomerToUpdate(id);
+    return new Message(result.message, { sent: result.sent });
+  }
+
+  @Post(':id/approve-address')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'The address is fine: remember it so it is not flagged again' })
+  async approveAddress(@Param('id') id: string, @CurrentUser('id') adminId: string) {
+    await this.orderAddress.approve(id, adminId);
+    return new Message('Address marked as correct.', { approved: true });
+  }
+
+  @Patch(':id/address')
+  @ApiOperation({ summary: 'Edit the order\'s address after the customer confirmed the right one' })
+  async updateAddress(@Param('id') id: string, @Body() dto: OrderAddressDto) {
+    await this.orderAddress.adminUpdate(id, dto);
+    return presentOrder(await this.queries.getForAdmin(id), ADMIN_VIEW);
   }
 
   @Get(':id/assignment-suggestions')
@@ -156,6 +184,7 @@ export class AdminCustomersController {
   constructor(
     private readonly users: UsersService,
     private readonly queries: OrderQueryService,
+    private readonly addresses: AddressesService,
   ) {}
 
   @Get()
@@ -171,10 +200,44 @@ export class AdminCustomersController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Customer profile with recent orders' })
-  async get(@Param('id', ParseUUIDPipe) id: string, @Query() page: PaginationDto) {
+  async get(@Param('id', ParseUUIDPipe) id: string, @Query() q: CustomerDetailQueryDto) {
     const user = await this.users.getById(id);
-    const { items, total } = await this.queries.listForCustomer(id, page.skip, page.limit);
-    return { ...toUserView(user), orderCount: total, recentOrders: items.map((o) => presentOrder(o, ADMIN_VIEW)) };
+    const before = q.before ? new Date(q.before) : null;
+    const [{ items, total }, activity, saved, ordersBefore] = await Promise.all([
+      this.queries.listForCustomer(id, q.skip, q.status === 'DELIVERED' ? Math.max(q.limit, 50) : q.limit, q.status),
+      this.users.getActivity(id),
+      this.addresses.list(id),
+      before && !isNaN(before.getTime()) ? this.queries.countDeliveredBefore(id, before) : Promise.resolve(undefined),
+    ]);
+
+    // Home 1, Home 2, Work 1 ... ; any other title is shown as "Other - <title>"; oldest first
+    const counters: Record<string, number> = {};
+    const addresses = [...saved]
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((a) => {
+        const title = a.title.trim();
+        const key = title.toLowerCase();
+        let label: string;
+        if (key === 'home' || key === 'work') {
+          counters[key] = (counters[key] ?? 0) + 1;
+          label = `${key === 'home' ? 'Home' : 'Work'} ${counters[key]}`;
+        } else {
+          label = `Other - ${title || 'Address'}`;
+        }
+        return {
+          id: a.id, label, street: a.street, city: a.city, pincode: a.pincode,
+          latitude: a.latitude, longitude: a.longitude, isDefault: a.isDefault,
+        };
+      });
+
+    return {
+      ...toUserView(user),
+      ...activity,
+      orderCount: total,
+      ...(ordersBefore !== undefined ? { ordersBefore } : {}),
+      addresses,
+      recentOrders: items.map((o) => presentOrder(o, ADMIN_VIEW)),
+    };
   }
 
   @Patch(':id/status')

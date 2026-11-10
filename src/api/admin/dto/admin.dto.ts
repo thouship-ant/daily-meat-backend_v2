@@ -105,6 +105,19 @@ export class SetActiveDto {
   @ApiProperty() @IsBoolean() isActive: boolean;
 }
 
+export class OrderAddressDto {
+  @ApiProperty() @Transform(trim) @IsString() @Length(1, 255) street: string;
+  @ApiProperty() @Transform(trim) @IsString() @Length(1, 255) city: string;
+  @ApiProperty({ example: '620001' }) @Transform(trim) @IsString() @Matches(/^[6]\d{5}$/, { message: 'Please enter a valid 6-digit pincode.' }) pincode: string;
+}
+
+export class CustomerDetailQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ description: 'ISO date: also return ordersBefore = delivered orders placed before this moment' })
+  @IsOptional() @IsString() before?: string;
+  @ApiPropertyOptional({ enum: ['DELIVERED'], description: 'List only delivered orders' })
+  @IsOptional() @IsIn(['DELIVERED']) status?: 'DELIVERED';
+}
+
 export class UsersQueryDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'Name, phone or email contains' }) @IsOptional() @Transform(trim) @IsString() @MaxLength(60) search?: string;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;

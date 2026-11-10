@@ -112,6 +112,10 @@ model User {
   pushToken                String?   @map("push_token")
   pushDevices              Json?     @map("push_devices")
   signupLocation           String?   @map("signup_location") @db.VarChar(255)
+  signupLatitude           Float?    @map("signup_latitude")
+  signupLongitude          Float?    @map("signup_longitude")
+  lastLoginAt              DateTime? @map("last_login_at") @db.Timestamptz(6)
+  lastActiveAt             DateTime? @map("last_active_at") @db.Timestamptz(6)
   deviceId                 String?   @map("device_id")
   promotionalNotifications Boolean   @default(true) @map("promotional_notifications")
   // Legacy v1 columns. v2 keeps OTPs (hashed) in the cache layer instead; the columns stay for compatibility.
@@ -236,6 +240,8 @@ model Order {
   addressPincode      String        @map("address_pincode")
   addressLatitude     Decimal?      @map("address_latitude") @db.Decimal(10, 8)
   addressLongitude    Decimal?      @map("address_longitude") @db.Decimal(11, 8)
+  // Set when an admin asks the customer to correct the address; only then can the customer change it
+  addressChangeRequestedAt DateTime? @map("address_change_requested_at") @db.Timestamptz(6)
   createdAt           DateTime      @default(now()) @map("createdAt") @db.Timestamptz(6)
   updatedAt           DateTime      @updatedAt @map("updatedAt") @db.Timestamptz(6)
 
@@ -471,4 +477,18 @@ model PromoNotificationLog {
 
   @@index([userId, sentOn], map: "promo_logs_user_sent_idx")
   @@map("promo_notification_logs")
+}
+
+/// An address (street + city + pincode) an admin confirmed is correct, so the address check no longer flags it.
+model ApprovedAddress {
+  id         String   @id @default(uuid()) @db.Uuid
+  addressKey String   @unique @map("address_key")
+  street     String
+  city       String
+  pincode    String
+  approvedBy String?  @map("approved_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("createdAt") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updatedAt") @db.Timestamptz(6)
+
+  @@map("approved_addresses")
 }

@@ -3,6 +3,8 @@ import { OnEvent } from '@nestjs/event-emitter';
 import {
   DomainEvents,
   DriverArrivedEvent,
+  AddressUpdateRequestedEvent,
+  OrderAddressChangedEvent,
   OrderCancelledEvent,
   OrderPaidEvent,
   OrderPlacedEvent,
@@ -27,17 +29,37 @@ export class OrderNotificationsListener {
   @OnEvent(DomainEvents.OrderPlaced)
   async onPlaced({ order }: OrderPlacedEvent) {
     await this.notifications.toAdmins({
-      title: `New Order #${order.id}`,
+      title: `New Order #${String(order.id).slice(0, 8)}`,
       body: `A new order has been placed and is awaiting assignment. ${order.schedule ?? ''}`.trim(),
       data: this.adminPayload(order),
       event: 'adminNewOrder',
     });
   }
 
+  @OnEvent(DomainEvents.AddressUpdateRequested)
+  async onAddressUpdateRequested(e: AddressUpdateRequestedEvent) {
+    await this.notifications.toUser(e.userId, {
+      title: 'Please update your delivery address',
+      body: e.message,
+      data: { type: 'ADDRESS_UPDATE_REQUIRED', route: 'customer_order', orderId: e.orderId },
+      event: 'orderStatusChanged',
+    });
+  }
+
+  @OnEvent(DomainEvents.OrderAddressChanged)
+  async onAddressChanged({ order }: OrderAddressChangedEvent) {
+    await this.notifications.toAdmins({
+      title: 'Delivery address changed',
+      body: `Order #${String(order.id).slice(0, 8)}: the customer changed the delivery address.`,
+      data: { route: 'admin_order', orderId: order.id },
+      event: 'adminOrderStatusChanged',
+    });
+  }
+
   @OnEvent(DomainEvents.OrderPaid)
   async onPaid({ order }: OrderPaidEvent) {
     await this.notifications.toAdmins({
-      title: `New Paid Order #${order.id}`,
+      title: `New Paid Order #${String(order.id).slice(0, 8)}`,
       body: `A new ONLINE order has been placed and paid successfully. ${order.schedule ?? ''}`.trim(),
       data: this.adminPayload(order),
       event: 'adminNewOrder',
@@ -69,8 +91,8 @@ export class OrderNotificationsListener {
         });
         if (actor === 'DRIVER') {
           await this.notifications.toAdmins({
-            title: `Order #${order.id} Out for Delivery`,
-            body: `Driver has picked up Order #${order.id}.`,
+            title: `Order #${String(order.id).slice(0, 8)} Out for Delivery`,
+            body: `Driver has picked up Order #${String(order.id).slice(0, 8)}.`,
             data: { route: 'admin_order', orderId: order.id },
             event: 'adminOrderStatusChanged',
           });
@@ -85,8 +107,8 @@ export class OrderNotificationsListener {
         });
         if (actor === 'DRIVER') {
           await this.notifications.toAdmins({
-            title: `Order #${order.id} Delivered`,
-            body: `Order #${order.id} has been successfully delivered.`,
+            title: `Order #${String(order.id).slice(0, 8)} Delivered`,
+            body: `Order #${String(order.id).slice(0, 8)} has been successfully delivered.`,
             data: { route: 'admin_order', orderId: order.id },
             event: 'adminOrderStatusChanged',
           });
@@ -100,8 +122,8 @@ export class OrderNotificationsListener {
           event: 'orderStatusChanged',
         });
         await this.notifications.toAdmins({
-          title: `Delivery Failed: Order #${order.id}`,
-          body: `Driver failed to deliver Order #${order.id}.${e.reason ? ` Reason: ${e.reason}` : ''}`,
+          title: `Delivery Failed: Order #${String(order.id).slice(0, 8)}`,
+          body: `Driver failed to deliver Order #${String(order.id).slice(0, 8)}.${e.reason ? ` Reason: ${e.reason}` : ''}`,
           data: { route: 'admin_order', orderId: order.id },
           event: 'adminOrderStatusChanged',
         });
@@ -117,7 +139,7 @@ export class OrderNotificationsListener {
     if (actor === 'CUSTOMER') {
       await this.notifications.toAdmins({
         title: 'Order Cancelled',
-        body: `Order #${order.id} was cancelled by the customer.${suffix}`,
+        body: `Order #${String(order.id).slice(0, 8)} was cancelled by the customer.${suffix}`,
         data: { route: 'admin_order', orderId: order.id },
         event: 'adminOrderStatusChanged',
       });
@@ -132,7 +154,7 @@ export class OrderNotificationsListener {
     if (order.driverId) {
       await this.notifications.toUser(order.driverId, {
         title: 'Order Cancelled',
-        body: `Order #${order.id} has been cancelled and removed from your route.${suffix}`,
+        body: `Order #${String(order.id).slice(0, 8)} has been cancelled and removed from your route.${suffix}`,
         data: { route: 'driver_active_orders', orderId: order.id, status: 'CANCELLED' },
         event: 'driverOrderStatusChanged',
       });

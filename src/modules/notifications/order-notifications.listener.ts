@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import {
+  CodOnlinePaymentClosedEvent,
+  CodOrderPaidOnlineEvent,
   DomainEvents,
   DriverArrivedEvent,
   AddressUpdateRequestedEvent,
@@ -63,6 +65,44 @@ export class OrderNotificationsListener {
       body: `A new ONLINE order has been placed and paid successfully. ${order.schedule ?? ''}`.trim(),
       data: this.adminPayload(order),
       event: 'adminNewOrder',
+    });
+  }
+
+  /**
+   * A placed COD order was paid online. Nobody is delivering it yet (pending / confirmed): tell the hub's admins.
+   * A driver already has it (assigned, picked up, out for delivery): tell that driver the payment details.
+   */
+  @OnEvent(DomainEvents.CodOrderPaidOnline)
+  async onCodPaidOnline({ order, hubId, amount, reference }: CodOrderPaidOnlineEvent) {
+    const short = String(order.id).slice(0, 8);
+    const ref = `Rs. ${amount} • Ref ${reference}`;
+    this.notifications.orderStatus({ id: order.id, userId: order.userId, status: order.status });
+    if (order.driverId && ['ASSIGNED', 'PICKED', 'OUT_FOR_DELIVERY'].includes(order.status)) {
+      await this.notifications.toUser(order.driverId, {
+        title: `Order #${short} paid online`,
+        body: `The customer paid online (${ref}). Do not collect cash on delivery.`,
+        data: { route: 'driver_active_orders', orderId: order.id, type: 'COD_PAID_ONLINE' },
+        event: 'driverOrderStatusChanged',
+      });
+    } else {
+      await this.notifications.toHubAdmins(hubId, {
+        title: `Order #${short} paid online`,
+        body: `The customer paid this Cash on Delivery order online (${ref}).`,
+        data: this.adminPayload(order),
+        event: 'adminOrderStatusChanged',
+      });
+    }
+  }
+
+  /** 5 minutes after the order left: online payment is closed, so the driver collects the cash. */
+  @OnEvent(DomainEvents.CodOnlinePaymentClosed)
+  async onCodPaymentClosed({ order, amount }: CodOnlinePaymentClosedEvent) {
+    if (!order.driverId) return;
+    await this.notifications.toUser(order.driverId, {
+      title: `Order #${String(order.id).slice(0, 8)}: collect cash`,
+      body: `Online payment is now closed for this order. Collect Rs. ${amount} in cash from the customer.`,
+      data: { route: 'driver_active_orders', orderId: order.id, type: 'COD_ONLINE_PAYMENT_CLOSED' },
+      event: 'driverOrderStatusChanged',
     });
   }
 

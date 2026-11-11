@@ -5,6 +5,7 @@ import { ApiException, ErrorCode } from '../../common/api-error';
 import {
   DomainEvents,
   OrderActor,
+  CodOrderPaidOnlineEvent,
   OrderCancelledEvent,
   OrderPaidEvent,
   OrdersAssignedEvent,
@@ -166,6 +167,27 @@ export class OrderLifecycleService {
   }
 
   /**
+   * A Cash on Delivery order was paid online. The order becomes an ONLINE / PAID order (so refunds, the driver's
+   * "nothing to collect" and the reports all work as for any prepaid order). Idempotent; true on the first call.
+   * Hub admins are told while nobody is delivering yet; once a driver has it, the driver gets the details.
+   */
+  async markCodPaidOnline(orderId: string, reference: string): Promise<boolean> {
+    const res = await this.prisma.order.updateMany({
+      where: { id: orderId, paymentMethod: 'COD', paymentStatus: { not: 'PAID' }, status: { in: ['PENDING', 'CONFIRMED', 'ASSIGNED', 'PICKED', 'OUT_FOR_DELIVERY'] } },
+      data: { paymentMethod: 'ONLINE', paymentStatus: 'PAID' },
+    });
+    if (res.count === 0) return false;
+    const order = await this.load(orderId);
+    this.events.emit(DomainEvents.CodOrderPaidOnline, {
+      order: this.summarize(order),
+      hubId: order.hubId,
+      amount: Number(order.totalAmount),
+      reference,
+    } satisfies CodOrderPaidOnlineEvent);
+    return true;
+  }
+
+  /**
    * An online payment failed / expired / was abandoned. The order is cancelled (not deleted - history and
    * audit stay intact) and any coupon it consumed is released.
    */
@@ -186,8 +208,9 @@ export class OrderLifecycleService {
     if (order.paymentMethod !== 'ONLINE' || order.paymentStatus === 'PAID') {
       throw ApiException.badRequest(ErrorCode.VALIDATION_FAILED, 'Only unpaid online orders can be deleted.');
     }
-    // Items and coupon redemption cascade with the order.
-    await this.prisma.order.delete({ where: { id: orderId } });
+    // Kept as a cancelled / failed-payment record (never shown in the customer's history): the COD fallback rule
+    // for orders above the COD limit counts a customer's unpaid online attempts.
+    await this.abandonUnpaid(orderId, 'Payment not completed');
   }
 
   // ---------- helpers ----------
@@ -217,6 +240,9 @@ export class OrderLifecycleService {
         data.deliveredAt = new Date();
         if (current.paymentMethod === 'COD') data.paymentStatus = 'PAID'; // cash collected
         break;
+      case 'OUT_FOR_DELIVERY':
+        data.outForDeliveryAt = new Date(); // online payment of a COD order closes 5 minutes after this
+        break;
       case 'PENDING':
         data.driverId = null;
         data.failureReason = null;
@@ -239,7 +265,7 @@ export class OrderLifecycleService {
   private async refundIfPaid(order: Order): Promise<RefundOutcome> {
     if (order.paymentMethod !== 'ONLINE' || order.paymentStatus !== 'PAID') return 'NOT_REQUIRED';
     try {
-      await this.gateway.refund(order.id, Number(order.totalAmount), `REFUND_${order.id}_${Date.now()}`);
+      await this.gateway.refund(order.gatewayOrderId ?? order.id, Number(order.totalAmount), `REFUND_${order.id}_${Date.now()}`);
       await this.prisma.order.update({ where: { id: order.id }, data: { paymentStatus: 'REFUNDED' } });
       return 'REFUNDED';
     } catch (e) {

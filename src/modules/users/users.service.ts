@@ -262,6 +262,22 @@ export class UsersService {
     return u ? this.splitTokens(u) : [];
   }
 
+  /** Admins of one hub (plus admins without a hub, and super admins). */
+  async pushTokensForHubAdmins(hubId: number | null): Promise<string[]> {
+    const users = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        pushToken: { not: null },
+        OR: [
+          { role: 'SUPERADMIN' as Role },
+          { role: 'ADMIN' as Role, ...(hubId == null ? {} : { OR: [{ hubId }, { hubId: null }] }) },
+        ],
+      },
+      select: { pushToken: true },
+    });
+    return [...new Set(users.flatMap((u) => this.splitTokens(u)))];
+  }
+
   async pushTokensForRole(role: Role): Promise<string[]> {
     const users = await this.prisma.user.findMany({
       where: {

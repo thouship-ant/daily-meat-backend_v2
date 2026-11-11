@@ -41,6 +41,12 @@ export class CustomerOrdersController {
     return this.placement.quote(user, dto);
   }
 
+  @Get('orders/cod-status')
+  @ApiOperation({ summary: 'Can I pay by Cash on Delivery above the COD limit? (only after an online payment did not go through)' })
+  codStatus(@CurrentUser('id') userId: string) {
+    return this.placement.codStatus(userId);
+  }
+
   @Post('orders')
   @ResponseMessage('Order placed.')
   @ApiOperation({

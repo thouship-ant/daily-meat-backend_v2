@@ -239,7 +239,13 @@ model Order {
   paymentStatus            PaymentStatus @default(PENDING) @map("payment_status")
   cfOrderId                String?       @map("cf_order_id")
   paymentSessionId         String?       @map("payment_session_id")
-  deliveryInstruction      String?       @map("delivery_instruction")
+  // The id the payment gateway knows this order by (the order id, or a suffixed one after a retry of a COD order)
+  gatewayOrderId           String?       @map("gateway_order_id")
+  // When the order left for delivery: online payment of a COD order stays open 5 minutes after this
+  outForDeliveryAt         DateTime?     @map("out_for_delivery_at") @db.Timestamptz(6)
+  // When the driver was told that online payment closed (so the cash must be collected); set once
+  payClosedNotifiedAt      DateTime?     @map("pay_closed_notified_at") @db.Timestamptz(6)
+  deliveryInstruction     String?       @map("delivery_instruction")
   failureReason            String?       @map("failure_reason")
   deliveredAt              DateTime?     @map("delivered_at") @db.Timestamptz(6)
   deliveryDate             DateTime?     @map("delivery_date") @db.Date

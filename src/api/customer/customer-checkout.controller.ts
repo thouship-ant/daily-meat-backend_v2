@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Auth, CurrentUser, Public } from '../../common/decorators';
 import { CouponsService } from '../../modules/coupons/coupons.service';
@@ -82,6 +82,16 @@ export class CustomerHubsController {
 @Controller('payments')
 export class CustomerPaymentsController {
   constructor(private readonly payments: PaymentsService) {}
+
+  @Post('orders/:id/pay-online')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Pay an already placed Cash on Delivery order online',
+    description: 'Open until the order is out for delivery (+5 minutes). Returns the gateway session to open in the app.',
+  })
+  payOnline(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.payments.startCodOnlinePayment(userId, id);
+  }
 
   @Post('verify')
   @HttpCode(200)

@@ -8,6 +8,10 @@ import { OrderStatus } from '@prisma/client';
 export const DomainEvents = {
   OrderPlaced: 'order.placed',
   OrderPaid: 'order.paid',
+  /** a Cash on Delivery order that was already placed got paid online */
+  CodOrderPaidOnline: 'order.cod_paid_online',
+  /** online payment of a COD order closed (5 minutes after it went out for delivery): the driver collects cash */
+  CodOnlinePaymentClosed: 'order.cod_online_payment_closed',
   OrderStatusChanged: 'order.status_changed',
   OrdersAssigned: 'orders.assigned',
   OrderCancelled: 'order.cancelled',
@@ -36,6 +40,17 @@ export interface OrderPlacedEvent {
 }
 export interface OrderPaidEvent {
   order: OrderSummary;
+}
+export interface CodOrderPaidOnlineEvent {
+  order: OrderSummary;
+  hubId: number | null;
+  amount: number;
+  /** gateway reference of the payment */
+  reference: string;
+}
+export interface CodOnlinePaymentClosedEvent {
+  order: OrderSummary;
+  amount: number;
 }
 export interface OrderStatusChangedEvent {
   order: OrderSummary;

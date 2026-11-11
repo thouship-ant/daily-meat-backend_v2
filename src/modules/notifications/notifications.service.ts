@@ -46,6 +46,17 @@ export class NotificationsService {
     }
   }
 
+  /** Like toAdmins, but the push goes only to the admins of that hub (and super admins). */
+  async toHubAdmins(hubId: number | null, notice: Notice): Promise<void> {
+    try {
+      if (notice.event) this.realtime.toAdmins(notice.event, { title: notice.title, body: notice.body, data: notice.data ?? {} });
+      const tokens = await this.users.pushTokensForHubAdmins(hubId);
+      await this.push.send(tokens, { title: notice.title, body: notice.body, data: notice.data, kind: notice.event });
+    } catch (e) {
+      this.logger.error(`toHubAdmins(${hubId}) failed: ${(e as Error).message}`);
+    }
+  }
+
   /** Silent socket update so open screens refresh without a push. */
   orderStatus(order: { id: string; userId: string; status: string }) {
     const payload = { data: { orderId: order.id, status: order.status } };

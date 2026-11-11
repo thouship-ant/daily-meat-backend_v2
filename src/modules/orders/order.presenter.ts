@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { toDateOnly } from '../../common/utils/time';
 import { toMoney } from '../../common/utils/money';
+import { onlinePayState } from './cod-online-payment';
 
 /** What every order query loads, so presenters never trigger lazy loads. */
 export const ORDER_INCLUDE = {
@@ -29,7 +30,13 @@ export function presentOrder(o: OrderWithRelations, opts: PresentOptions = {}) {
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
     deliveredAt: o.deliveredAt,
-    payment: { method: o.paymentMethod, status: o.paymentStatus },
+    payment: {
+      method: o.paymentMethod,
+      status: o.paymentStatus,
+      // a COD order can still be paid online until it is out for delivery (+5 minutes)
+      onlinePayAvailable: onlinePayState(o).available,
+      onlinePayClosesAt: onlinePayState(o).closesAt,
+    },
     amounts: {
       subtotal: num(o.subtotalAmount) ?? 0,
       discount: num(o.discountAmount) ?? 0,

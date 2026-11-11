@@ -66,6 +66,26 @@ export class HubsService {
     return this.decode(hub);
   }
 
+  /**
+   * Customers of a hub = the customers whose pincode is one of the hub's deliverable pincodes: the pincode of a
+   * saved delivery address, or - for a customer with no saved address yet - the pincode of the location where they
+   * first opened the app. Worked out when asked, so a pincode added to the hub later brings its customers along
+   * (and takes them away from the hub it moved from) with nothing to copy.
+   * undefined when no hub is asked for (= all hubs). A hub with no pincodes has no customers.
+   */
+  async customerScope(hubId?: number | null): Promise<Prisma.UserWhereInput | undefined> {
+    if (hubId == null) return undefined;
+    const hub = await this.getById(hubId);
+    const pins = hub.deliverablePincodes;
+    if (!pins.length) return { id: { in: [] } };
+    return {
+      OR: [
+        { addresses: { some: { pincode: { in: pins } } } },
+        { addresses: { none: {} }, signupPincode: { in: pins } },
+      ],
+    };
+  }
+
   /** First active hub: used when nothing says which hub is meant (guests). */
   async getDefault(): Promise<HubView | null> {
     const active = await this.listActive();

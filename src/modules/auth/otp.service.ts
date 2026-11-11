@@ -27,10 +27,10 @@ export class OtpService {
   ) {}
 
   private get ttl() {
-    return Number(this.config.get('OTP_TTL_SECONDS') ?? 300);
+    return Number(this.config.get('OTP_TTL_SECONDS') ?? 600);
   }
   private get maxAttempts() {
-    return Number(this.config.get('OTP_MAX_ATTEMPTS') ?? 5);
+    return Number(this.config.get('OTP_MAX_ATTEMPTS') ?? 3);
   }
 
   isTestAccount(identifier: string): boolean {

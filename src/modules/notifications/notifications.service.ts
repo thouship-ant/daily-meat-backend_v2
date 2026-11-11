@@ -57,4 +57,8 @@ export class NotificationsService {
   forceLogoutAdmins() {
     this.realtime.forceLogoutAdmins();
   }
+
+  forceLogoutUser(userId: string) {
+    this.realtime.forceLogoutUser(userId);
+  }
 }

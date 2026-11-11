@@ -9,7 +9,8 @@ import { OrderLifecycleService } from '../../modules/orders/order-lifecycle.serv
 import { OrderPlacementService } from '../../modules/orders/order-placement.service';
 import { OrderQueryService } from '../../modules/orders/order-query.service';
 import { presentOrder } from '../../modules/orders/order.presenter';
-import { CancelOrderDto, ChangeOrderAddressDto, PlaceOrderDto, QuoteDto } from './dto/customer.dto';
+import { HubsService } from '../../modules/hubs/hubs.service';
+import { CancelOrderDto, ChangeOrderAddressDto, PlaceOrderDto, QuoteDto, SlotsQueryDto } from './dto/customer.dto';
 
 @ApiTags('Customer · Orders')
 @Auth('CUSTOMER')
@@ -21,13 +22,16 @@ export class CustomerOrdersController {
     private readonly queries: OrderQueryService,
     private readonly slots: DeliverySlotsService,
     private readonly orderAddress: OrderAddressService,
+    private readonly hubs: HubsService,
   ) {}
 
   @Public()
   @Get('delivery-slots')
-  @ApiOperation({ summary: 'Active delivery time windows, earliest first' })
-  deliverySlots() {
-    return this.slots.listActive();
+  @ApiOperation({ summary: 'Active delivery time windows, earliest first. With ?date= (and ?pincode=) each slot says how many places are left' })
+  async deliverySlots(@Query() q: SlotsQueryDto) {
+    if (!q.date) return this.slots.listActive();
+    const hub = q.pincode ? await this.hubs.findForPincode(q.pincode) : null;
+    return this.slots.availability(q.date, hub?.id ?? null);
   }
 
   @Post('orders/quote')

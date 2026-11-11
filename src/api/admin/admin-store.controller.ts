@@ -15,6 +15,7 @@ import {
   CouponDto,
   ContactStatusDto,
   CouponsQueryDto,
+  HubFilterDto,
   CreateSellerBillDto,
   RequiredItemsQueryDto,
   HubDto,
@@ -40,6 +41,7 @@ export class AdminHubsController {
     return this.hubs.listAll();
   }
 
+  @Auth('SUPERADMIN')
   @Post()
   @ResponseMessage('Hub created.')
   create(@Body() dto: HubDto) {
@@ -64,6 +66,7 @@ export class AdminHubsController {
     return this.hubs.update(id, dto);
   }
 
+  @Auth('SUPERADMIN')
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a hub (refused if it has orders - deactivate it instead)' })
   async remove(@Param('id', ParseIntPipe) id: number) {
@@ -134,11 +137,17 @@ export class AdminCouponsController {
 @Auth('ADMIN')
 @Controller('tickets')
 export class AdminTicketsController {
-  constructor(private readonly support: SupportService) {}
+  constructor(
+    private readonly support: SupportService,
+    private readonly hubs: HubsService,
+  ) {}
 
   @Get()
   async list(@Query() q: TicketsQueryDto) {
-    const { items, total } = await this.support.adminList({ status: q.status, skip: q.skip, take: q.limit });
+    // a hub's tickets: about one of its orders, or from one of its customers
+    const customers = await this.hubs.customerScope(q.hubId);
+    const scope = q.hubId == null ? undefined : { OR: [{ order: { hubId: q.hubId } }, { user: customers }] };
+    const { items, total } = await this.support.adminList({ status: q.status, skip: q.skip, take: q.limit, scope });
     return new Paginated(items, total, q.page, q.limit);
   }
 
@@ -163,8 +172,8 @@ export class AdminMarketingController {
   }
 
   @Get('scheduled')
-  async list() {
-    return { plans: await this.marketing.listPlans() };
+  async list(@Query() q: HubFilterDto) {
+    return { plans: await this.marketing.listPlans(q.hubId) };
   }
 
   @Post('scheduled')
@@ -201,8 +210,8 @@ export class AdminContactController {
 
   @Get()
   @ApiOperation({ summary: 'Messages sent through the website contact form, newest first' })
-  async list() {
-    return { messages: await this.prisma.contactMessage.findMany({ orderBy: { createdAt: 'desc' } }) };
+  async list(@Query() q: HubFilterDto) {
+    return { messages: await this.prisma.contactMessage.findMany({ where: q.hubId != null ? { hubId: q.hubId } : {}, orderBy: { createdAt: 'desc' } }) };
   }
 
   @Patch(':id/status')
@@ -235,14 +244,14 @@ export class AdminSellerBillsController {
   }
 
   @Get()
-  list() {
-    return this.bills.list();
+  list(@Query() q: HubFilterDto) {
+    return this.bills.list(q.hubId);
   }
 
   @Get('required-items')
   @ApiOperation({ summary: 'Active products with the quantity the open orders still need' })
   required(@Query() q: RequiredItemsQueryDto) {
-    return this.bills.requiredItems(q.date);
+    return this.bills.requiredItems(q.date, q.hubId);
   }
 
   @Get(':id')

@@ -1,3 +1,4 @@
+import { DriverHubsService } from '../users/driver-hubs.service';
 import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { ApiException } from '../../common/api-error';
@@ -9,6 +10,8 @@ import { ACTIVE_DELIVERY_STATUSES, OPEN_STATUSES } from './order-status';
 
 export interface AdminOrderFilter {
   status?: OrderStatus;
+  /** any of these statuses (wins over `status`) */
+  statuses?: OrderStatus[];
   hubId?: number;
   driverId?: string;
   period?: string; // today | week | month | custom
@@ -34,7 +37,10 @@ const asDate = (s: string) => new Date(`${s}T00:00:00.000Z`);
 /** Read side of orders. Writes live in the placement / lifecycle services. */
 @Injectable()
 export class OrderQueryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly driverHubs: DriverHubsService,
+  ) {}
 
   // =====================================================================
   // Customer
@@ -80,7 +86,7 @@ export class OrderQueryService {
     }
     const where: Prisma.OrderWhereInput = {
       AND: and,
-      ...(f.status ? { status: f.status } : {}),
+      ...(f.statuses?.length ? { status: { in: f.statuses } } : f.status ? { status: f.status } : {}),
       ...(f.hubId ? { hubId: f.hubId } : {}),
       ...(f.driverId ? { driverId: f.driverId } : {}),
     };
@@ -122,9 +128,10 @@ export class OrderQueryService {
     };
   }
 
-  async dashboard(period: string | undefined, startDate?: string, endDate?: string) {
+  async dashboard(period: string | undefined, startDate?: string, endDate?: string, hubId?: number) {
     const range = istRange(period, startDate, endDate);
-    const visible = ADMIN_VISIBLE;
+    // one hub only (super admin), or all of them
+    const visible: Prisma.OrderWhereInput = hubId != null ? { AND: [ADMIN_VISIBLE, { hubId }] } : ADMIN_VISIBLE;
     const instant = (r: DateRange): Prisma.DateTimeFilter => (r.end ? { gte: r.start, lt: r.end } : { gte: r.start });
 
     const deliveredWhere: Prisma.OrderWhereInput = {
@@ -180,6 +187,12 @@ export class OrderQueryService {
       this.prisma.user.findMany({ where: { role: 'DRIVER', isActive: true }, select: { id: true, name: true, phone: true } }),
     ]);
     const busyIds = new Set(busy.map((b) => b.driverId));
+    // only drivers who work for this order's hub today (drivers with no hub set stay available)
+    const hubInfo = await this.driverHubs.resolve(drivers.map((d) => d.id));
+    const freeDrivers = drivers.filter((d) => {
+      const hub = hubInfo.get(d.id)?.effectiveHubId ?? null;
+      return hub == null || target.hubId == null || hub === target.hubId;
+    });
 
     const nearbyUnassignedOrders: Array<{ orderId: string; distanceKm: number; address: string }> = [];
     const nearbyActiveDrivers: Array<{ driver: { id: string; name: string | null; phone: string | null }; distanceKm: number; activeOrderId: string }> = [];
@@ -202,7 +215,7 @@ export class OrderQueryService {
     return {
       nearbyUnassignedOrders,
       nearbyActiveDrivers,
-      freeDrivers: drivers.filter((d) => !busyIds.has(d.id)),
+      freeDrivers: freeDrivers.filter((d) => !busyIds.has(d.id)),
     };
   }
 
@@ -238,7 +251,7 @@ export class OrderQueryService {
    * cancelled ones in the period they were cancelled. An order with items in several categories counts once in each
    * category, so the overall distinct counts are returned too (the grand total must not add the categories up).
    */
-  async categoryAnalytics(period: string | undefined, startDate?: string, endDate?: string) {
+  async categoryAnalytics(period: string | undefined, startDate?: string, endDate?: string, hubId?: number) {
     const range = istRange(period, startDate, endDate);
     const inst = (r: DateRange): Prisma.DateTimeFilter => (r.end ? { gte: r.start, lt: r.end } : { gte: r.start });
     const orderWhere: Prisma.OrderWhereInput = range
@@ -255,7 +268,7 @@ export class OrderQueryService {
       this.prisma.category.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
       this.prisma.product.findMany({ select: { categoryId: true, variants: { select: { inStock: true } } } }),
       this.prisma.orderItem.findMany({
-        where: { order: orderWhere },
+        where: { order: hubId != null ? { AND: [orderWhere, { hubId }] } : orderWhere },
         select: {
           orderId: true, quantity: true, price: true, costPriceSnapshot: true,
           order: { select: { status: true } },

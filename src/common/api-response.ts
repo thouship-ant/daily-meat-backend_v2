@@ -5,6 +5,8 @@ export interface PageMeta {
   totalPages: number;
   hasNext: boolean;
   hasPrev: boolean;
+  /** customers per section heading across the whole filtered list (customer list only) */
+  groupCounts?: Record<string, number>;
 }
 
 /** Return this from a controller to get `data: [...]` plus `meta` pagination in the envelope. */
@@ -15,9 +17,10 @@ export class Paginated<T> {
     total: number,
     page: number,
     limit: number,
+    extraMeta: Partial<PageMeta> = {},
   ) {
     const totalPages = Math.max(1, Math.ceil(total / limit));
-    this.meta = { page, limit, total, totalPages, hasNext: page < totalPages, hasPrev: page > 1 };
+    this.meta = { page, limit, total, totalPages, hasNext: page < totalPages, hasPrev: page > 1, ...extraMeta };
   }
 }
 

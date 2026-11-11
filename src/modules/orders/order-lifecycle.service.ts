@@ -14,6 +14,7 @@ import {
 import { toDateOnly } from '../../common/utils/time';
 import { CashfreeGateway } from '../../infrastructure/payments/cashfree.gateway';
 import { PrismaService, Tx } from '../../infrastructure/prisma/prisma.service';
+import { DriverHubsService } from '../users/driver-hubs.service';
 import { ORDER_INCLUDE, OrderWithRelations } from './order.presenter';
 import { canTransition } from './order-status';
 
@@ -44,6 +45,7 @@ export class OrderLifecycleService {
     private readonly prisma: PrismaService,
     private readonly gateway: CashfreeGateway,
     private readonly events: EventEmitter2,
+    private readonly driverHubs: DriverHubsService,
   ) {}
 
   // ---------- status transitions ----------
@@ -115,7 +117,15 @@ export class OrderLifecycleService {
     if (!driver) throw ApiException.notFound('Driver');
 
     const statuses: OrderStatus[] = reassign ? ['CONFIRMED', 'ASSIGNED'] : ['CONFIRMED'];
-    const candidates = await this.prisma.order.findMany({ where: { id: { in: orderIds }, status: { in: statuses } } });
+    const found = await this.prisma.order.findMany({ where: { id: { in: orderIds }, status: { in: statuses } } });
+
+    // A driver works for one hub at a time (home hub, or the temporary hub while one is active): they cannot take
+    // another hub's orders. Drivers with no hub set, and orders with no hub, are unrestricted.
+    const driverHub = await this.driverHubs.effectiveHubId(driverId);
+    const candidates = driverHub == null ? found : found.filter((o) => o.hubId == null || o.hubId === driverHub);
+    if (found.length > 0 && candidates.length === 0) {
+      throw ApiException.badRequest('DRIVER_OTHER_HUB', 'This driver is working for a different hub at the moment, so cannot take these orders.');
+    }
 
     const previousDrivers: Record<string, number> = {};
     for (const o of candidates) {

@@ -17,7 +17,7 @@ export const envValidationSchema = Joi.object({
 
   // Business rules
   COD_MAX_AMOUNT: Joi.number().default(2000),
-  OTP_TTL_SECONDS: Joi.number().default(300),
+  OTP_TTL_SECONDS: Joi.number().default(600),
   OTP_MAX_ATTEMPTS: Joi.number().default(5),
   MAX_ACCOUNTS_PER_DEVICE: Joi.number().default(2),
   TEST_ACCOUNT_PHONE_MARKER: Joi.string().allow('').default(''), // e.g. 9000000000 (store reviewer account)

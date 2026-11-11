@@ -1,3 +1,4 @@
+import { Role } from '@prisma/client';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -52,7 +53,7 @@ export class RealtimeGateway implements OnGatewayInit {
           (bearer?.startsWith('Bearer ') ? bearer.slice(7) : undefined);
         if (!token) return next(new Error('AUTH_REQUIRED'));
 
-        const payload = await this.jwt.verifyAsync<{ sub: string; iat: number }>(token, {
+        const payload = await this.jwt.verifyAsync<{ sub: string; iat: number; role?: Role }>(token, {
           secret: this.config.getOrThrow('JWT_SECRET'),
         });
         const user = await this.users.findAuthUser(payload.sub);
@@ -60,7 +61,9 @@ export class RealtimeGateway implements OnGatewayInit {
         if (user.tokensValidAfter && payload.iat < Math.floor(user.tokensValidAfter / 1000)) {
           return next(new Error('SESSION_ENDED'));
         }
-        (socket as AuthedSocket).data.user = { id: user.id, role: user.role, name: user.name, phone: user.phone, email: user.email };
+        // Join the rooms of the role this session signed in as (an admin using the customer app is a customer here).
+        const role = payload.role && [user.role, ...user.additionalRoles].includes(payload.role) ? payload.role : user.role;
+        (socket as AuthedSocket).data.user = { id: user.id, role, name: user.name, phone: user.phone, email: user.email };
         next();
       } catch {
         next(new Error('AUTH_INVALID'));
@@ -72,7 +75,7 @@ export class RealtimeGateway implements OnGatewayInit {
     const user = socket.data.user;
     if (!user) return;
     void socket.join(Rooms.user(user.id));
-    if (user.role === 'ADMIN') void socket.join(Rooms.admins);
+    if (user.role === 'ADMIN' || user.role === 'SUPERADMIN') void socket.join(Rooms.admins);
   }
 
   @SubscribeMessage('subscribeToOrder')
@@ -82,6 +85,7 @@ export class RealtimeGateway implements OnGatewayInit {
     // Customers can watch their own orders, drivers the ones they carry, admins any.
     const allowed =
       user.role === 'ADMIN' ||
+      user.role === 'SUPERADMIN' ||
       !!(await this.prisma.order.findFirst({
         where: { id, ...(user.role === 'DRIVER' ? { driverId: user.id } : { userId: user.id }) },
         select: { id: true },
@@ -112,6 +116,12 @@ export class RealtimeGateway implements OnGatewayInit {
 
   toOrder(orderId: string, event: string, payload: unknown) {
     this.server?.to(Rooms.order(orderId)).emit(event, payload);
+  }
+
+  /** Kicks every open connection of one user (used when an admin or super admin deactivates the account). */
+  forceLogoutUser(userId: string) {
+    this.server?.to(Rooms.user(userId)).emit('forceLogout', { code: 'ACCOUNT_DEACTIVATED', message: 'Your account has been deactivated.' });
+    this.server?.in(Rooms.user(userId)).disconnectSockets(true);
   }
 
   /** Kicks every admin socket (used by "log out all admins"). */

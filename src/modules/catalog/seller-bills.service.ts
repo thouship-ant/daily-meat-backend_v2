@@ -16,7 +16,7 @@ export interface SellerBillItemInput {
 export class SellerBillsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(input: { items: SellerBillItemInput[]; notes?: string; categoryName?: string; supplierName?: string }) {
+  async create(input: { items: SellerBillItemInput[]; notes?: string; categoryName?: string; supplierName?: string; hubId?: number }) {
     for (let attempt = 0; attempt < 5; attempt++) {
       const id = `DM${Math.floor(10000 + Math.random() * 90000)}`;
       try {
@@ -26,6 +26,7 @@ export class SellerBillsService {
             notes: input.notes,
             categoryName: input.categoryName,
             supplierName: input.supplierName,
+            hubId: input.hubId ?? null,
             items: {
               create: input.items.map((i) => ({
                 productId: i.productId,
@@ -47,8 +48,8 @@ export class SellerBillsService {
     throw ApiException.badRequest('BILL_ID_TAKEN', 'Could not generate a bill number, please try again.');
   }
 
-  list() {
-    return this.prisma.sellerBill.findMany({ orderBy: { createdAt: 'desc' } });
+  list(hubId?: number) {
+    return this.prisma.sellerBill.findMany({ where: hubId != null ? { hubId } : {}, orderBy: { createdAt: 'desc' } });
   }
 
   async get(id: string) {
@@ -58,11 +59,12 @@ export class SellerBillsService {
   }
 
   /** Every active product / variant with the quantity the open orders (optionally of one delivery date) still need. */
-  async requiredItems(date?: string) {
+  async requiredItems(date?: string, hubId?: number) {
     const items = await this.prisma.orderItem.findMany({
       where: {
         order: {
           status: { notIn: ['DELIVERED', 'CANCELLED', 'FAILED'] },
+          ...(hubId != null ? { hubId } : {}),
           ...(date ? { deliveryDate: new Date(`${date}T00:00:00.000Z`) } : {}),
         },
       },

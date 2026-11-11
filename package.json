@@ -19,6 +19,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:pull": "prisma db pull",
     "seed:admin": "ts-node prisma/seed-admin.ts",
+    "logout:deactivated": "ts-node prisma/logout-deactivated.ts",
     "seed:demo": "ts-node prisma/seed-demo.ts"
   },
   "dependencies": {

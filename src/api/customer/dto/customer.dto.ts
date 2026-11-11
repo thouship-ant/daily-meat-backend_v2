@@ -34,6 +34,50 @@ export class IdentifierDto {
   identifier: string;
 }
 
+export class MultiRoleStartDto extends IdentifierDto {
+  @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(128) password: string;
+}
+
+export class MultiRoleResendDto {
+  @ApiProperty() @IsString() @IsNotEmpty() challengeToken: string;
+}
+
+export class MultiRoleOtpDto {
+  @ApiProperty() @IsString() @IsNotEmpty() challengeToken: string;
+  @ApiProperty({ example: '123456' }) @IsString() @Length(4, 8) otp: string;
+}
+
+export class MultiRoleSelectDto {
+  @ApiProperty() @IsString() @IsNotEmpty() selectionToken: string;
+  @ApiProperty({ enum: ['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER'] }) @IsIn(['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER']) role: 'SUPERADMIN' | 'ADMIN' | 'DRIVER' | 'CUSTOMER';
+}
+
+export class SlotsQueryDto {
+  @ApiPropertyOptional({ example: '2026-11-13', description: 'Delivery day: adds how many places are left per slot' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  date?: string;
+
+  @ApiPropertyOptional({ description: 'Delivery pincode: the hub that serves it is the one whose places are counted' })
+  @IsOptional()
+  @Matches(/^\d{6}$/)
+  pincode?: string;
+}
+
+export class SendOtpDto extends IdentifierDto {
+  @ApiPropertyOptional({ description: 'Device IMEI when the OS exposes it (Android 9 and below only)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  imei?: string | null;
+
+  @ApiPropertyOptional({ description: 'Stable app-install device id' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  deviceId?: string;
+}
+
 export class VerifyOtpDto extends IdentifierDto {
   @ApiProperty({ example: '123456' }) @IsString() @Length(4, 8) otp: string;
   @ApiPropertyOptional({ description: 'Stable device id, used to limit accounts per device' })
@@ -47,6 +91,7 @@ export class SignupLocationDto {
   @ApiProperty({ example: 'Crawford, Tamil Nadu' }) @Transform(trim) @IsString() @Length(1, 255) location: string;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsLatitude() latitude?: number;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsLongitude() longitude?: number;
+  @ApiPropertyOptional({ example: '620005', description: 'Pincode of that location (6 digits)' }) @IsOptional() @Matches(/^\d{6}$/) pincode?: string;
 }
 
 export class ChangeOrderAddressDto {

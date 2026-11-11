@@ -51,3 +51,25 @@ describe('HubsService rules', () => {
     expect(svc.isOpenNow(hub(), 22 * 60 + 11)).toBe(false);
   });
 });
+
+describe('HubsService.customerScope', () => {
+  const withHub = (pins: string[]) =>
+    new HubsService({ hub: { findUnique: async () => ({ id: 1, deliverablePincodes: JSON.stringify(pins), distanceTiers: '[]' }) } } as any, null as any);
+
+  it('is everyone when no hub is chosen', async () => {
+    expect(await withHub([]).customerScope(undefined)).toBeUndefined();
+  });
+
+  it("matches the hub's pincodes on the delivery address, or on the first-login pincode when there is no address", async () => {
+    expect(await withHub(['620005', '620001']).customerScope(1)).toEqual({
+      OR: [
+        { addresses: { some: { pincode: { in: ['620005', '620001'] } } } },
+        { addresses: { none: {} }, signupPincode: { in: ['620005', '620001'] } },
+      ],
+    });
+  });
+
+  it('is nobody for a hub with no pincodes', async () => {
+    expect(await withHub([]).customerScope(1)).toEqual({ id: { in: [] } });
+  });
+});

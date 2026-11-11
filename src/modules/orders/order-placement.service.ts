@@ -93,6 +93,9 @@ export class OrderPlacementService {
           const couponId = validated?.coupon.id ?? null;
           const couponCode = validated?.coupon.code ?? null;
 
+          // the slot may only take so many orders per hub and day (set in Manage Delivery Slots)
+          if (slot && deliveryDate) await this.slots.assertHasRoom(tx, slot, deliveryDate, hub.id);
+
           const id = this.generateOrderId();
           const order = await tx.order.create({
             data: {

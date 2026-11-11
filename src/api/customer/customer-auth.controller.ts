@@ -5,7 +5,7 @@ import { Message } from '../../common/api-response';
 import { Auth, CurrentUser, Public, ResponseMessage } from '../../common/decorators';
 import { AuthService } from '../../modules/auth/auth.service';
 import { LogoutDto, RefreshTokenDto } from '../shared/shared.dto';
-import { IdentifierDto, VerifyOtpDto } from './dto/customer.dto';
+import { IdentifierDto, MultiRoleOtpDto, MultiRoleResendDto, MultiRoleSelectDto, MultiRoleStartDto, SendOtpDto, VerifyOtpDto } from './dto/customer.dto';
 
 @ApiTags('Customer · Auth')
 @Controller('auth')
@@ -25,7 +25,7 @@ export class CustomerAuthController {
   @Post('otp/send')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send a one-time password by SMS (phone) or email' })
-  async sendOtp(@Body() dto: IdentifierDto) {
+  async sendOtp(@Body() dto: SendOtpDto) {
     await this.auth.sendCustomerOtp(dto.identifier);
     return new Message('OTP sent.');
   }
@@ -38,6 +38,46 @@ export class CustomerAuthController {
   @ApiOperation({ summary: 'Verify the OTP. Creates the account on first sign-in and returns tokens.' })
   verifyOtp(@Body() dto: VerifyOtpDto) {
     return this.auth.verifyCustomerOtp(dto.identifier, dto.otp, dto.deviceId);
+  }
+
+  // ---- a number with several roles: password -> OTP -> choose the role ----
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('multi-role/password')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Step 1 for a number with several roles: check the password, then send the OTP' })
+  multiRolePassword(@Body() dto: MultiRoleStartDto) {
+    return this.auth.multiRoleStart(dto.identifier, dto.password);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('multi-role/resend')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Send the OTP again during the multi-role sign-in' })
+  async multiRoleResend(@Body() dto: MultiRoleResendDto) {
+    await this.auth.multiRoleResend(dto.challengeToken);
+    return new Message('OTP sent.');
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('multi-role/otp')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Step 2: check the OTP. Returns the roles to choose from and a selection token' })
+  multiRoleOtp(@Body() dto: MultiRoleOtpDto) {
+    return this.auth.multiRoleVerifyOtp(dto.challengeToken, dto.otp);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('multi-role/select')
+  @HttpCode(200)
+  @ResponseMessage('Signed in.')
+  @ApiOperation({ summary: 'Step 3: sign in as the chosen role' })
+  multiRoleSelect(@Body() dto: MultiRoleSelectDto) {
+    return this.auth.multiRoleSelect(dto.selectionToken, dto.role);
   }
 
   @Public()

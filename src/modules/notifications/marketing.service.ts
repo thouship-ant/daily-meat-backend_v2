@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ScheduledNotification } from '@prisma/client';
 import { ApiException } from '../../common/api-error';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { HubsService } from '../hubs/hubs.service';
 import { UsersService } from '../users/users.service';
 import { PushService } from './push.service';
 
@@ -20,6 +21,7 @@ export interface PlanInput {
   windowStart?: string;
   windowEnd?: string;
   isActive?: boolean;
+  hubId?: number | null;
 }
 
 const toMinutes = (hhmm: string) => {
@@ -51,6 +53,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly push: PushService,
     private readonly users: UsersService,
+    private readonly hubs: HubsService,
   ) {}
 
   // The plans are sent by a once-a-minute check. It is on in production, and elsewhere only when
@@ -71,7 +74,8 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
 
   // ---------- audience + sending ----------
 
-  async audienceTokens(target: string = 'ALL', inactiveDays?: number) {
+  async audienceTokens(target: string = 'ALL', inactiveDays?: number, hubId?: number | null) {
+    const scope = await this.hubs.customerScope(hubId);
     const cutoff = new Date(Date.now() - (Number(inactiveDays) || 14) * 86_400_000);
     const customers = await this.prisma.user.findMany({
       where: {
@@ -81,6 +85,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
         pushToken: { not: null },
         OR: [{ phone: null }, { phone: { not: { startsWith: 'del_' } } }],
         ...(target === 'INACTIVE' ? { orders: { none: { createdAt: { gte: cutoff } } } } : {}),
+        ...(scope ? { AND: [scope] } : {}),
       },
       select: { pushToken: true },
     });
@@ -92,9 +97,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Counts the audience, answers straight away and sends in the background (many Expo requests). */
-  async broadcast(input: { target?: string; inactiveDays?: number; title: string; body: string }) {
+  async broadcast(input: { target?: string; inactiveDays?: number; title: string; body: string; hubId?: number }) {
     const target = input.target === 'INACTIVE' ? 'INACTIVE' : 'ALL';
-    const { tokens, customers } = await this.audienceTokens(target, input.inactiveDays);
+    const { tokens, customers } = await this.audienceTokens(target, input.inactiveDays, input.hubId);
     if (!tokens.length) {
       return { message: 'No customers with a registered device matched, so nothing was sent.', devices: 0, customers };
     }
@@ -118,7 +123,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     return {
       id: p.id, name: p.name, title: p.title, body: p.body, audience: p.audience, inactiveDays: p.inactiveDays,
       startDate: ymd(p.startDate), endDate: ymd(p.endDate), windowStart: p.windowStart, windowEnd: p.windowEnd,
-      isActive: p.isActive, lastSentOn: p.lastSentOn ? ymd(p.lastSentOn) : null, lastSentCount: p.lastSentCount,
+      isActive: p.isActive, hubId: p.hubId, lastSentOn: p.lastSentOn ? ymd(p.lastSentOn) : null, lastSentCount: p.lastSentCount,
     };
   }
 
@@ -142,14 +147,15 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     for (const f of ['name', 'title', 'body', 'inactiveDays', 'windowStart', 'windowEnd', 'isActive'] as const) {
       if (p[f] !== undefined) out[f] = p[f];
     }
+    if (p.hubId !== undefined) out.hubId = p.hubId;
     if (p.audience !== undefined) out.audience = p.audience === 'INACTIVE' ? 'INACTIVE' : 'ALL';
     if (p.startDate) out.startDate = new Date(`${p.startDate}T00:00:00.000Z`);
     if (p.endDate) out.endDate = new Date(`${p.endDate}T00:00:00.000Z`);
     return out;
   }
 
-  async listPlans() {
-    const plans = await this.prisma.scheduledNotification.findMany({ orderBy: [{ startDate: 'desc' }, { id: 'asc' }] });
+  async listPlans(hubId?: number) {
+    const plans = await this.prisma.scheduledNotification.findMany({ where: hubId != null ? { hubId } : {}, orderBy: [{ startDate: 'desc' }, { id: 'asc' }] });
     return plans.map((p) => this.present(p));
   }
 
@@ -204,7 +210,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       });
       if (!claimed.count) continue;
       try {
-        const { tokens, customers } = await this.audienceTokens(plan.audience, plan.inactiveDays ?? undefined);
+        const { tokens, customers } = await this.audienceTokens(plan.audience, plan.inactiveDays ?? undefined, plan.hubId);
         if (tokens.length) {
           await this.push.send(tokens, { title: plan.title, body: plan.body, data: { route: 'home', type: 'SCHEDULED', planId: plan.id } });
         }

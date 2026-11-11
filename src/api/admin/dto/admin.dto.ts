@@ -35,6 +35,13 @@ const toBool = ({ value }: { value: unknown }) => (value === 'true' || value ===
 
 export class AdminOrdersQueryDto extends PaginationDto {
   @ApiPropertyOptional({ enum: OrderStatus }) @IsOptional() @IsEnum(OrderStatus) status?: OrderStatus;
+  @ApiPropertyOptional({ description: 'Several statuses at once, comma separated (e.g. ASSIGNED,PICKED,OUT_FOR_DELIVERY). Used instead of `status`.', example: 'ASSIGNED,PICKED,OUT_FOR_DELIVERY' })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.split(',').map((s) => s.trim()).filter(Boolean) : value))
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsEnum(OrderStatus, { each: true })
+  statuses?: OrderStatus[];
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
   @ApiPropertyOptional() @IsOptional() @IsUUID() driverId?: string;
   @ApiPropertyOptional({ enum: ['today', 'week', 'month', 'custom'] }) @IsOptional() @IsIn(['today', 'week', 'month', 'custom']) period?: string;
@@ -90,6 +97,19 @@ export class DashboardQueryDto {
   @ApiPropertyOptional({ enum: ['today', 'week', 'month', 'custom', 'all'], default: 'all' }) @IsOptional() @IsIn(['today', 'week', 'month', 'custom', 'all']) filter?: string;
   @ApiPropertyOptional() @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) startDate?: string;
   @ApiPropertyOptional() @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) endDate?: string;
+  @ApiPropertyOptional({ description: 'Only this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
+}
+
+export class ReportQueryDto {
+  @ApiPropertyOptional({ enum: ['today', 'week', 'month', 'custom'], default: 'week' }) @IsOptional() @IsIn(['today', 'week', 'month', 'custom']) filter?: string;
+  @ApiPropertyOptional({ example: '2026-11-01' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) startDate?: string;
+  @ApiPropertyOptional({ example: '2026-11-12', description: 'At most 92 days from startDate' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) endDate?: string;
+  @ApiPropertyOptional({ description: 'Only this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
+}
+
+/** Just the hub filter (super admin lists: contact messages, supplier bills, marketing plans ...) */
+export class HubFilterDto {
+  @ApiPropertyOptional({ description: 'Only this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
 }
 
 export class ContactStatusDto {
@@ -109,10 +129,12 @@ export class CreateSellerBillDto {
   @ApiPropertyOptional() @IsOptional() @IsString() notes?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() categoryName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() supplierName?: string;
+  @ApiPropertyOptional({ description: 'The hub this bill is for' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
 }
 
 export class RequiredItemsQueryDto {
   @ApiPropertyOptional({ example: '2026-11-11' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) date?: string;
+  @ApiPropertyOptional({ description: 'Only the orders of this hub' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
 }
 
 // ---------- marketing ----------
@@ -122,6 +144,7 @@ export class BroadcastDto {
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) inactiveDays?: number;
   @ApiProperty() @Transform(trim) @IsString() @Length(1, 100) title: string;
   @ApiProperty() @Transform(trim) @IsString() @Length(1, 500) body: string;
+  @ApiPropertyOptional({ description: 'Only the customers of this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
 }
 
 export class ScheduledPlanDto {
@@ -135,6 +158,7 @@ export class ScheduledPlanDto {
   @ApiPropertyOptional({ example: '10:00' }) @IsOptional() @IsString() windowStart?: string;
   @ApiPropertyOptional({ example: '11:00' }) @IsOptional() @IsString() windowEnd?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({ description: 'Only the customers of this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number | null;
 }
 
 // ---------- people ----------
@@ -144,6 +168,20 @@ export class CreateDriverDto {
   @ApiProperty({ example: '+919876543210' }) @Transform(trim) @IsString() @Length(8, 20) phone: string;
   @ApiProperty({ minLength: 8 }) @IsString() @MinLength(8) @MaxLength(128) password: string;
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsEmail() email?: string;
+}
+
+export class SetDriverHubDto {
+  @ApiPropertyOptional({ description: 'The hub the driver normally works for; null/omitted = no hub' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  hubId?: number | null;
+}
+
+export class CreateDriverHubAssignmentDto {
+  @ApiProperty({ description: 'The hub the driver is lent to' }) @Type(() => Number) @IsInt() hubId: number;
+  @ApiProperty({ example: '2026-11-15', description: 'First day (inclusive), YYYY-MM-DD' }) @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) startDate: string;
+  @ApiProperty({ example: '2026-11-20', description: 'Last day (inclusive); the driver is back at their own hub the day after' }) @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) endDate: string;
 }
 
 export class SetActiveDto {
@@ -163,9 +201,24 @@ export class CustomerDetailQueryDto extends PaginationDto {
   @IsOptional() @IsIn(['DELIVERED']) status?: 'DELIVERED';
 }
 
+/** Customer list / export filters (see CustomerDirectoryService). */
+export class CustomersQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ description: 'Name, phone or email contains' }) @IsOptional() @Transform(trim) @IsString() @MaxLength(60) search?: string;
+  @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({ description: 'Only the customers of this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
+  @ApiPropertyOptional({ example: '2026-11-01', description: 'Registered on or after (India time)' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) createdFrom?: string;
+  @ApiPropertyOptional({ example: '2026-11-30', description: 'Registered on or before (India time)' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) createdTo?: string;
+  @ApiPropertyOptional({ description: 'Street / city text of the delivery address (first-login location when there is no address)' }) @IsOptional() @Transform(trim) @IsString() @MaxLength(60) location?: string;
+  @ApiPropertyOptional({ example: '620001', description: 'Pincode range start: delivery address pincode, or first-login location pincode when there is no address' }) @IsOptional() @Matches(/^\d{6}$/) pincodeFrom?: string;
+  @ApiPropertyOptional({ example: '620010' }) @IsOptional() @Matches(/^\d{6}$/) pincodeTo?: string;
+  @ApiPropertyOptional({ enum: ['date', 'pincode', 'city'] }) @IsOptional() @IsIn(['date', 'pincode', 'city']) groupBy?: 'date' | 'pincode' | 'city';
+  @ApiPropertyOptional({ enum: ['asc', 'desc'] }) @IsOptional() @IsIn(['asc', 'desc']) sort?: 'asc' | 'desc';
+}
+
 export class UsersQueryDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'Name, phone or email contains' }) @IsOptional() @Transform(trim) @IsString() @MaxLength(60) search?: string;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({ description: 'Only the customers of this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
 }
 
 // ---------- catalog ----------
@@ -272,6 +325,7 @@ export class SlotDto {
   @ApiProperty({ example: '11:00' }) @IsString() @IsNotEmpty() @MaxLength(20) endTime: string;
   @ApiProperty({ example: 'Morning: 9 AM - 11 AM' }) @IsString() @IsNotEmpty() @MaxLength(100) label: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({ description: 'Orders one hub takes for this slot per day; empty = no limit' }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(10000) maxOrders?: number | null;
 }
 
 export class UpdateSlotDto {
@@ -279,6 +333,7 @@ export class UpdateSlotDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) endTime?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100) label?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({ description: 'Orders one hub takes for this slot per day; null = no limit' }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(10000) maxOrders?: number | null;
 }
 
 export class CouponDto {
@@ -327,6 +382,7 @@ export class CouponsQueryDto extends PaginationDto {
 
 export class TicketsQueryDto extends PaginationDto {
   @ApiPropertyOptional({ enum: TicketStatus }) @IsOptional() @IsEnum(TicketStatus) status?: TicketStatus;
+  @ApiPropertyOptional({ description: 'Only tickets of this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
 }
 
 export class UpdateTicketDto {

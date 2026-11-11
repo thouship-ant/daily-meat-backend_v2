@@ -16,13 +16,15 @@ export class CustomerProfileController {
   @Get()
   @ApiOperation({ summary: 'My profile' })
   async me(@CurrentUser('id') id: string) {
-    return toUserView(await this.users.getById(id));
+    const user = await this.users.getById(id);
+    // hasSignupLocation: false = the app should ask for location once and log it as the first location
+    return { ...toUserView(user, 'CUSTOMER'), hasSignupLocation: this.users.hasSignupLocation(user) };
   }
 
   @Patch()
   @ApiOperation({ summary: 'Update my profile (also marks it completed)' })
   async update(@CurrentUser('id') id: string, @Body() dto: UpdateProfileDto) {
-    return toUserView(await this.users.updateProfile(id, dto));
+    return toUserView(await this.users.updateProfile(id, dto), 'CUSTOMER');
   }
 
   @Delete()
@@ -42,7 +44,7 @@ export class CustomerProfileController {
   @Put('signup-location')
   @ApiOperation({ summary: 'Remember roughly where the customer first opened the app (set once)' })
   async signupLocation(@CurrentUser('id') id: string, @Body() dto: SignupLocationDto) {
-    await this.users.setSignupLocationOnce(id, dto.location, dto.latitude, dto.longitude);
+    await this.users.setSignupLocationOnce(id, dto.location, dto.latitude, dto.longitude, dto.pincode);
     return new Message('OK');
   }
 }

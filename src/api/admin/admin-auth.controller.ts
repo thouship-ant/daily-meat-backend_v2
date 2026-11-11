@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { Role } from '@prisma/client';
 import { Message } from '../../common/api-response';
 import { Auth, CurrentUser, Public, ResponseMessage } from '../../common/decorators';
 import { AuthService } from '../../modules/auth/auth.service';
@@ -46,8 +47,8 @@ export class AdminAuthController {
 
   @Auth('ADMIN')
   @Get('me')
-  async me(@CurrentUser('id') id: string) {
-    return toUserView(await this.users.getById(id));
+  async me(@CurrentUser('id') id: string, @CurrentUser('role') role: Role) {
+    return toUserView(await this.users.getById(id), role);
   }
 
   @Auth('ADMIN')

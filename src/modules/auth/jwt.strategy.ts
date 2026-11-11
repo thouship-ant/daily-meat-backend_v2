@@ -36,7 +36,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw ApiException.unauthorized('Session ended. Please log in again.', ErrorCode.SESSION_ENDED);
     }
     this.users.recordActivity(user.id);
-    // Role comes from the database, not the token, so a role change takes effect immediately.
-    return { id: user.id, role: user.role, name: user.name, phone: user.phone, email: user.email };
+    // The token says which of the account's roles this session is using, but the database decides what is
+    // allowed: a role that has since been removed falls back to the primary role, so changes apply immediately.
+    const allowed: Role[] = [user.role, ...(user.additionalRoles ?? [])];
+    const role = payload.role && allowed.includes(payload.role) ? payload.role : user.role;
+    return { id: user.id, role, name: user.name, phone: user.phone, email: user.email };
   }
 }

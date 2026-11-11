@@ -17,7 +17,9 @@ export class RolesGuard implements CanActivate {
     if (!roles || roles.length === 0) return true;
 
     const user = context.switchToHttp().getRequest().user;
-    if (!user || !roles.includes(user.role)) throw ApiException.forbidden();
+    // A super admin may use everything an admin may (the reverse is not true)
+    const allowed = !!user && (roles.includes(user.role) || (user.role === 'SUPERADMIN' && roles.includes('ADMIN')));
+    if (!allowed) throw ApiException.forbidden();
     return true;
   }
 }

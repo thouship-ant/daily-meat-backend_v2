@@ -12,6 +12,7 @@ const AUTH_CACHE_TTL = 30; // seconds
 const authKey = (id: string) => `auth:user:${id}`;
 
 export interface CachedAuthUser extends AuthUser {
+  additionalRoles: Role[];
   isActive: boolean;
   /** epoch ms; access tokens issued before this are rejected (forced logout) */
   tokensValidAfter: number | null;
@@ -56,6 +57,7 @@ export class UsersService {
         select: {
           id: true,
           role: true,
+          additionalRoles: true,
           name: true,
           phone: true,
           email: true,
@@ -110,14 +112,29 @@ export class UsersService {
     return this.update(id, data);
   }
 
-  async setSignupLocationOnce(id: string, location: string, latitude?: number, longitude?: number) {
-    await this.prisma.user.updateMany({
-      where: { id, role: 'CUSTOMER', signupLocation: null },
-      data: {
-        signupLocation: location.slice(0, 255),
-        ...(latitude !== undefined && longitude !== undefined ? { signupLatitude: latitude, signupLongitude: longitude } : {}),
-      },
-    });
+  /**
+   * The first location a customer opened the app from (latitude / longitude, with the place name and pincode).
+   * Logged once: when the customer already has coordinates the call changes nothing. A customer whose older record
+   * has only a place name (no coordinates) gets the coordinates filled in, and keeps the name they already have.
+   */
+  async setSignupLocationOnce(id: string, location: string, latitude?: number, longitude?: number, pincode?: string) {
+    const u = await this.prisma.user.findUnique({ where: { id }, select: { signupLocation: true, signupLatitude: true, signupPincode: true } });
+    if (!u || u.signupLatitude != null) return; // unknown user, or the first location is already logged
+    const hasCoords = latitude !== undefined && longitude !== undefined;
+    if (!hasCoords && u.signupLocation) return; // a name-only request when a name is already stored
+    // no pincode sent: take one from the text if it has one ("Crawford 620005")
+    const pin = pincode ?? location.match(/(?<!\d)(\d{6})(?!\d)/)?.[1];
+    const data: Prisma.UserUpdateInput = {
+      ...(u.signupLocation ? {} : { signupLocation: location.slice(0, 255) }),
+      ...(pin && !u.signupPincode ? { signupPincode: pin } : {}),
+      ...(hasCoords ? { signupLatitude: latitude, signupLongitude: longitude } : {}),
+    };
+    if (Object.keys(data).length) await this.prisma.user.update({ where: { id }, data });
+  }
+
+  /** Whether the customer's first location (coordinates) has been logged yet; the app asks for it when not. */
+  hasSignupLocation(u: { signupLatitude: number | null }): boolean {
+    return u.signupLatitude != null;
   }
 
   // ---------- activity (last login / last seen) ----------
@@ -142,14 +159,14 @@ export class UsersService {
   async getActivity(id: string) {
     const u = await this.prisma.user.findUnique({
       where: { id },
-      select: { lastLoginAt: true, lastActiveAt: true, signupLocation: true, signupLatitude: true, signupLongitude: true },
+      select: { lastLoginAt: true, lastActiveAt: true, signupLocation: true, signupLatitude: true, signupLongitude: true, signupPincode: true },
     });
     return {
       lastLoginAt: u?.lastLoginAt ?? null,
       lastActiveAt: u?.lastActiveAt ?? null,
       registeredLocation:
         u && (u.signupLocation || u.signupLatitude != null)
-          ? { text: u.signupLocation, latitude: u.signupLatitude, longitude: u.signupLongitude }
+          ? { text: u.signupLocation, latitude: u.signupLatitude, longitude: u.signupLongitude, pincode: u.signupPincode }
           : null,
     };
   }
@@ -247,7 +264,12 @@ export class UsersService {
 
   async pushTokensForRole(role: Role): Promise<string[]> {
     const users = await this.prisma.user.findMany({
-      where: { role, isActive: true, pushToken: { not: null } },
+      where: {
+        isActive: true,
+        pushToken: { not: null },
+        // an account that holds the role as an extra role gets its alerts too; super admins get the admin alerts
+        OR: [{ role }, { additionalRoles: { has: role } }, ...(role === 'ADMIN' ? [{ role: 'SUPERADMIN' as Role }] : [])],
+      },
       select: { pushToken: true },
     });
     return [...new Set(users.flatMap((u) => this.splitTokens(u)))];
@@ -257,7 +279,7 @@ export class UsersService {
 
   async listByRole(
     role: Role,
-    opts: { skip: number; take: number; search?: string; isActive?: boolean },
+    opts: { skip: number; take: number; search?: string; isActive?: boolean; extraWhere?: Prisma.UserWhereInput },
   ): Promise<{ items: (User & { _count: { orders: number; deliveries: number } })[]; total: number }> {
     const where: Prisma.UserWhereInput = {
       role,
@@ -273,15 +295,17 @@ export class UsersService {
           }
         : {}),
     };
+    // e.g. only the customers of one hub
+    const scoped: Prisma.UserWhereInput = opts.extraWhere ? { AND: [where, opts.extraWhere] } : where;
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
-        where,
+        where: scoped,
         orderBy: { createdAt: 'desc' },
         skip: opts.skip,
         take: opts.take,
         include: { _count: { select: { orders: true, deliveries: true } } },
       }),
-      this.prisma.user.count({ where }),
+      this.prisma.user.count({ where: scoped }),
     ]);
     return { items, total };
   }
@@ -302,8 +326,11 @@ export class UsersService {
   async setActive(id: string, role: Role, isActive: boolean): Promise<User> {
     const user = await this.getById(id);
     if (user.role !== role) throw ApiException.notFound(role === 'DRIVER' ? 'Driver' : 'Customer');
-    // Deactivating also ends their sessions.
-    return this.update(id, isActive ? { isActive } : { isActive, tokensValidAfter: new Date(), refreshToken: null });
+    // Deactivating also ends their sessions and stops their pushes (same as `npm run logout:deactivated`).
+    return this.update(
+      id,
+      isActive ? { isActive } : { isActive, tokensValidAfter: new Date(), refreshToken: null, pushToken: null, pushDevices: Prisma.DbNull },
+    );
   }
 
   /** Ends every session of the given role (e.g. "log out all admins"). Returns affected count. */

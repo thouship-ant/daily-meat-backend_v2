@@ -58,7 +58,7 @@ export class DriverAuthController {
   @Get('me')
   @ApiOperation({ summary: 'My profile' })
   async me(@CurrentUser('id') id: string) {
-    return toUserView(await this.users.getById(id));
+    return toUserView(await this.users.getById(id), 'DRIVER');
   }
 
   @Auth('DRIVER')

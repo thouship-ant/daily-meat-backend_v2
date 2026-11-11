@@ -44,7 +44,7 @@ chmod 600 .env
 | `S3_BUCKET`, `S3_PUBLIC_BASE_URL`, `AWS_REGION`, `AWS_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Product / category / banner images (any S3-compatible store, e.g. Supabase Storage) |
 | `EXPO_ACCESS_TOKEN`, `ANDROID_*`, `PUSH_TOKEN_MAX_CHARS` | Push notifications |
 | `APP_ANDROID_*`, `APP_IOS_*` | "Update available" prompt |
-| `COD_MAX_AMOUNT`, `OTP_*`, `MAX_ACCOUNTS_PER_DEVICE` | Business rules (defaults 2000 / 300 s / 5 / 2) |
+| `COD_MAX_AMOUNT`, `OTP_*`, `MAX_ACCOUNTS_PER_DEVICE` | Business rules (defaults 2000 / 600 s / 5 / 2) |
 | `TEST_ACCOUNT_PHONE_MARKER`, `TEST_ACCOUNT_OTP` | Store-reviewer account with a fixed OTP. **Leave `TEST_ACCOUNT_PHONE_MARKER` empty** unless you need it, or anyone knowing the OTP can sign in as that account |
 | `CORS_ORIGINS` | Only needed for browser clients (admin web panel). Comma separated; empty allows any origin |
 | `SWAGGER_ENABLED` | Defaults to `false` in the production compose file. Set `true` to expose `/docs/*` |
@@ -106,8 +106,16 @@ v2's schema maps onto v1's tables, so data moves with a plain data-only dump. Af
 
 ```bash
 $C exec -T db psql -U daily_meat -d daily_meat -v ON_ERROR_STOP=1 --single-transaction < data.sql
+```
+
+3. Create / promote the staff accounts (super admins and the driver, password `DAS@3781`, see `prisma/sql/staff-accounts.sql` for the numbers and roles). It is a separate step on purpose: the import needs empty tables, so the accounts cannot be created by a migration that runs before it.
+
+```bash
+$C exec -T db psql -U daily_meat -d daily_meat -v ON_ERROR_STOP=1 --single-transaction < prisma/sql/staff-accounts.sql
 $C restart api
 ```
+
+Run it only when you want those accounts (re)set: it puts the password back to `DAS@3781` and ends their sessions. Numbers that are customers in the data (for example `9363803781`) are promoted in place and keep their orders; the others are created. The numbers with more than one role (`9363803781`, `9600249294`, `8825997939`, all Super Admin + Admin, the first two also Customer / Driver) get the password + OTP + role-choice login. Only a Super Admin sees all hubs, creates hubs and filters every list by hub.
 
 This exact path (fresh v2 schema + v1 `data.sql`, 1,500+ users / 300+ orders) was verified. Imported **admin and driver accounts keep their passwords** (both apps use bcrypt). Customers sign in with OTP as before.
 
@@ -123,6 +131,10 @@ Only if you will **stop v1 completely** and want v2 on the same database. Back u
 $C run --rm migrate npx prisma migrate resolve --applied 20261108063501_init
 $C run --rm migrate
 ```
+
+If that database already received `prisma/migrations/20261110090000_address_review_and_activity` by hand (as the Supabase database did), mark it applied as well before the last command:
+`$C run --rm migrate npx prisma migrate resolve --applied 20261110090000_address_review_and_activity`.
+`20261111120000_multi_role_and_admin_accounts` then adds `users.additional_roles` and promotes the staff numbers that already exist as users (it never creates users, so it is safe on a populated database); anything it did not find is created by `prisma/sql/staff-accounts.sql`.
 
 Check `GET /api/v1/admin/orders` and the dashboard before reopening to customers. Prefer the fresh-database route above; it is easier to roll back.
 

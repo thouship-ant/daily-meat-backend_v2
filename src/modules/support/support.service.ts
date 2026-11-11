@@ -3,6 +3,19 @@ import { Prisma, TicketStatus } from '@prisma/client';
 import { ApiException } from '../../common/api-error';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
+/**
+ * A ticket keeps one reply text. A ticket resolved with a reply and later closed with another one shows both
+ * (oldest first, blank line between): the second no longer replaces the first. Same rule as the v1 backend.
+ */
+export function mergeReply(previous: string | null | undefined, reply: string): string {
+  const next = String(reply ?? '').trim();
+  const before = String(previous ?? '').trim();
+  if (!next) return before;
+  if (!before) return next;
+  if (before === next || before.endsWith(`\n\n${next}`)) return before;
+  return `${before}\n\n${next}`;
+}
+
 @Injectable()
 export class SupportService {
   constructor(private readonly prisma: PrismaService) {}
@@ -26,8 +39,11 @@ export class SupportService {
     return { items, total };
   }
 
-  async adminList(opts: { status?: TicketStatus; skip: number; take: number }) {
-    const where: Prisma.SupportTicketWhereInput = opts.status ? { status: opts.status } : {};
+  async adminList(opts: { status?: TicketStatus; skip: number; take: number; scope?: Prisma.SupportTicketWhereInput }) {
+    const where: Prisma.SupportTicketWhereInput = {
+      ...(opts.status ? { status: opts.status } : {}),
+      ...(opts.scope ?? {}),
+    };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.supportTicket.findMany({
         where,
@@ -48,7 +64,7 @@ export class SupportService {
       where: { id },
       data: {
         ...(dto.status ? { status: dto.status } : {}),
-        ...(dto.adminReply !== undefined ? { adminReply: dto.adminReply, repliedAt: new Date() } : {}),
+        ...(dto.adminReply !== undefined ? { adminReply: mergeReply(ticket.adminReply, dto.adminReply), repliedAt: new Date() } : {}),
       },
     });
   }

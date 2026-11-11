@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { HubsModule } from '../hubs/hubs.module';
 import { TrackingModule } from '../tracking/tracking.module';
 import { UsersModule } from '../users/users.module';
 import { MarketingService } from './marketing.service';
@@ -13,6 +14,7 @@ import { RealtimeGateway } from './realtime.gateway';
 @Module({
   imports: [
     UsersModule,
+    HubsModule,
     TrackingModule,
     JwtModule.registerAsync({
       inject: [ConfigService],

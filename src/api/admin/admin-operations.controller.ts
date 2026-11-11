@@ -1,16 +1,22 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, StreamableFile } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiException } from '../../common/api-error';
 import { Message, Paginated } from '../../common/api-response';
 import { Auth, CurrentUser, ResponseMessage } from '../../common/decorators';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { AddressesService } from '../../modules/addresses/addresses.service';
+import { HubsService } from '../../modules/hubs/hubs.service';
+import { NotificationsService } from '../../modules/notifications/notifications.service';
 import { OrderAddressService } from '../../modules/orders/order-address.service';
 import { ManualOrderService } from '../../modules/orders/manual-order.service';
 import { OrderLifecycleService } from '../../modules/orders/order-lifecycle.service';
 import { OrderQueryService } from '../../modules/orders/order-query.service';
 import { allowedNext } from '../../modules/orders/order-status';
 import { presentOrder } from '../../modules/orders/order.presenter';
+import { CustomerDirectoryService, CustomerFilter } from '../../modules/users/customer-directory.service';
+import { DriverHubsService } from '../../modules/users/driver-hubs.service';
+import { asText, toCsv } from '../../common/utils/csv';
+import { ReportsService } from '../../modules/reports/reports.service';
 import { UsersService } from '../../modules/users/users.service';
 import { toUserView } from '../../modules/users/user.mapper';
 import {
@@ -22,6 +28,10 @@ import {
   ManualOrderDto,
   OrderAddressDto,
   SetActiveDto,
+  SetDriverHubDto,
+  CustomersQueryDto,
+  ReportQueryDto,
+  CreateDriverHubAssignmentDto,
   UpdateOrderStatusDto,
   UsersQueryDto,
 } from './dto/admin.dto';
@@ -35,14 +45,16 @@ export class AdminDashboardController {
   constructor(
     private readonly queries: OrderQueryService,
     private readonly users: UsersService,
+    private readonly hubs: HubsService,
   ) {}
 
   @Get()
   @ApiOperation({ summary: 'Revenue, order counts, customers/drivers and the latest orders for a period' })
   async dashboard(@Query() q: DashboardQueryDto) {
+    const scope = await this.hubs.customerScope(q.hubId);
     const [d, customers, drivers] = await Promise.all([
-      this.queries.dashboard(q.filter, q.startDate, q.endDate),
-      this.users.listByRole('CUSTOMER', { skip: 0, take: 1 }),
+      this.queries.dashboard(q.filter, q.startDate, q.endDate, q.hubId),
+      this.users.listByRole('CUSTOMER', { skip: 0, take: 1, extraWhere: scope }),
       this.users.listByRole('DRIVER', { skip: 0, take: 1 }),
     ]);
     return {
@@ -63,7 +75,20 @@ export class AdminAnalysisController {
   @Get('category-wise')
   @ApiOperation({ summary: 'Gross sales, profit and distinct order counts per category for a period' })
   categoryWise(@Query() q: DashboardQueryDto) {
-    return this.queries.categoryAnalytics(q.filter, q.startDate, q.endDate);
+    return this.queries.categoryAnalytics(q.filter, q.startDate, q.endDate, q.hubId);
+  }
+}
+
+@ApiTags('Admin · Reports')
+@Auth('ADMIN')
+@Controller('reports')
+export class AdminReportsController {
+  constructor(private readonly reports: ReportsService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Sales and customer-activity KPIs for a period, with a row per day (all hubs or one)' })
+  report(@Query() q: ReportQueryDto) {
+    return this.reports.report(q.filter, q.startDate, q.endDate, q.hubId);
   }
 }
 
@@ -156,6 +181,8 @@ export class AdminDriversController {
   constructor(
     private readonly users: UsersService,
     private readonly queries: OrderQueryService,
+    private readonly notifications: NotificationsService,
+    private readonly driverHubs: DriverHubsService,
   ) {}
 
   @Post()
@@ -165,12 +192,24 @@ export class AdminDriversController {
   }
 
   @Get()
-  async list(@Query() q: UsersQueryDto) {
-    const { items, total } = await this.users.listByRole('DRIVER', { skip: q.skip, take: q.limit, search: q.search, isActive: q.isActive });
-    const counts = await this.queries.driverCounts(items.map((u) => u.id));
+  async list(@Query() q: UsersQueryDto, @CurrentUser('role') role: string) {
+    const superAdmin = role === 'SUPERADMIN'; // hubs for drivers are managed by the super admin only
+    // hubId = the drivers working for that hub today (own hub, or lent to it for a date range that covers today)
+    const { items, total } = await this.users.listByRole('DRIVER', {
+      skip: q.skip,
+      take: q.limit,
+      search: q.search,
+      isActive: q.isActive,
+      extraWhere: superAdmin && q.hubId != null ? this.driverHubs.whereWorkingFor(q.hubId) : undefined,
+    });
+    const [counts, hubInfo] = await Promise.all([
+      this.queries.driverCounts(items.map((u) => u.id)),
+      superAdmin ? this.driverHubs.resolve(items.map((u) => u.id)) : Promise.resolve(new Map()),
+    ]);
     return new Paginated(
       items.map((u) => ({
         ...toUserView(u),
+        ...hubInfo.get(u.id),
         deliveries: u._count.deliveries,
         activeOrdersCount: counts.get(u.id)?.active ?? 0,
         completedOrdersCount: counts.get(u.id)?.completed ?? 0,
@@ -183,7 +222,8 @@ export class AdminDriversController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Driver profile with today\'s numbers and the orders currently on the road' })
-  async get(@Param('id', ParseUUIDPipe) id: string) {
+  async get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('role') role: string) {
+    const superAdmin = role === 'SUPERADMIN';
     const user = await this.users.getById(id);
     const [stats, active, counts, done] = await Promise.all([
       this.queries.driverStats(id),
@@ -192,18 +232,54 @@ export class AdminDriversController {
       this.queries.completedForDriver(id, 0, 50),
     ]);
     const c = counts.get(id)!;
+    const hubInfo = superAdmin ? (await this.driverHubs.resolve([id])).get(id) : undefined;
     return {
       ...toUserView(user),
+      ...hubInfo,
+      ...(superAdmin ? { hubAssignments: await this.driverHubs.listAssignments(id) } : {}),
       stats: { ...stats, activeOrdersCount: c.active, completedOrdersCount: c.completed },
       activeOrders: active.map((o) => presentOrder(o, ADMIN_VIEW)),
       completedOrders: done.items.map((o) => presentOrder(o, ADMIN_VIEW)),
     };
   }
 
+  @Auth('SUPERADMIN')
+  @Patch(':id/hub')
+  @ApiOperation({ summary: "Set the hub a driver normally works for (null clears it)" })
+  async setHub(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetDriverHubDto) {
+    await this.driverHubs.setHomeHub(id, dto.hubId);
+    return { ...(await this.driverHubs.resolve([id])).get(id) };
+  }
+
+  @Auth('SUPERADMIN')
+  @Get(':id/hub-assignments')
+  @ApiOperation({ summary: 'Temporary hub moves of a driver (past, current and upcoming)' })
+  hubAssignments(@Param('id', ParseUUIDPipe) id: string) {
+    return this.driverHubs.listAssignments(id);
+  }
+
+  @Auth('SUPERADMIN')
+  @Post(':id/hub-assignments')
+  @ResponseMessage('Driver moved to the other hub for the dates given.')
+  @ApiOperation({ summary: 'Lend a driver to another hub for a date range; they return to their own hub automatically afterwards' })
+  addHubAssignment(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateDriverHubAssignmentDto) {
+    return this.driverHubs.addAssignment(id, dto.hubId, dto.startDate, dto.endDate);
+  }
+
+  @Auth('SUPERADMIN')
+  @Delete(':id/hub-assignments/:assignmentId')
+  @ApiOperation({ summary: 'Cancel a temporary hub move (the driver is back at their own hub straight away)' })
+  async removeHubAssignment(@Param('id', ParseUUIDPipe) id: string, @Param('assignmentId', ParseUUIDPipe) assignmentId: string) {
+    await this.driverHubs.removeAssignment(id, assignmentId);
+    return new Message('Temporary hub move removed.');
+  }
+
   @Patch(':id/status')
   @ApiOperation({ summary: 'Activate / deactivate a driver (deactivation ends their sessions)' })
   async setActive(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetActiveDto) {
-    return toUserView(await this.users.setActive(id, 'DRIVER', dto.isActive));
+    const user = await this.users.setActive(id, 'DRIVER', dto.isActive);
+    if (!dto.isActive) this.notifications.forceLogoutUser(id); // signed in somewhere: cut it now
+    return toUserView(user);
   }
 }
 
@@ -215,17 +291,77 @@ export class AdminCustomersController {
     private readonly users: UsersService,
     private readonly queries: OrderQueryService,
     private readonly addresses: AddressesService,
+    private readonly hubs: HubsService,
+    private readonly notifications: NotificationsService,
+    private readonly directory: CustomerDirectoryService,
   ) {}
 
+  private async filterOf(q: CustomersQueryDto): Promise<CustomerFilter> {
+    return {
+      search: q.search,
+      isActive: q.isActive,
+      extraWhere: await this.hubs.customerScope(q.hubId),
+      createdFrom: q.createdFrom,
+      createdTo: q.createdTo,
+      location: q.location,
+      pincodeFrom: q.pincodeFrom,
+      pincodeTo: q.pincodeTo,
+    };
+  }
+
   @Get()
-  async list(@Query() q: UsersQueryDto) {
-    const { items, total } = await this.users.listByRole('CUSTOMER', { skip: q.skip, take: q.limit, search: q.search, isActive: q.isActive });
+  @ApiOperation({ summary: 'Customers (search, status, registered dates, address location / pincode, split by date / pincode / city)' })
+  async list(@Query() q: CustomersQueryDto) {
+    const { items, total, groupCounts } = await this.directory.list(await this.filterOf(q), {
+      skip: q.skip,
+      take: q.limit,
+      groupBy: q.groupBy,
+      sort: q.sort,
+    });
     return new Paginated(
-      items.map((u) => ({ ...toUserView(u), orderCount: u._count.orders })),
+      items.map((u) => ({ ...toUserView(u), orderCount: u._count.orders, city: u.area.city, pincode: u.area.pincode, pincodeSource: u.area.pincodeSource, pushEnabled: !!u.pushToken?.trim() })),
       total,
       q.page,
       q.limit,
+      { groupCounts },
     );
+  }
+
+  @Get('export')
+  @ApiOperation({
+    summary: 'CSV of the customers matching the same filters as the list (all pages), with delivery area and first-login location',
+  })
+  async export(@Query() q: CustomersQueryDto) {
+    const rows = await this.directory.findAll(await this.filterOf(q), q.groupBy, q.sort);
+    const ist = (d: Date | null) => (d ? new Date(d.getTime() + 5.5 * 3600_000).toISOString().slice(0, 16).replace('T', ' ') : '');
+    const csv = toCsv(
+      [
+        'Name', 'Mobile Number', 'Email', 'Status', 'Registered On (IST)', 'Last Login (IST)', 'Total Orders',
+        'Delivery Address', 'City', 'Pincode', 'Pincode Source',
+        'First Login Location', 'First Login Latitude', 'First Login Longitude', 'First Login Pincode',
+      ],
+      rows.map((u) => [
+        u.name ?? 'N/A',
+        asText(u.phone),
+        u.email ?? '',
+        u.isActive ? 'Active' : 'Inactive',
+        ist(u.createdAt),
+        ist(u.lastLoginAt),
+        u._count.orders,
+        u.area.street,
+        u.area.city,
+        asText(u.area.pincode),
+        u.area.pincodeSource === 'ADDRESS' ? 'Delivery address' : u.area.pincodeSource === 'FIRST_LOGIN' ? 'First login location' : '',
+        u.signupLocation ?? '',
+        u.signupLatitude ?? '',
+        u.signupLongitude ?? '',
+        asText(u.signupPincode),
+      ]),
+    );
+    return new StreamableFile(Buffer.from(csv, 'utf8'), {
+      type: 'text/csv; charset=utf-8',
+      disposition: 'attachment; filename="customers.csv"',
+    });
   }
 
   @Get(':id')
@@ -273,6 +409,8 @@ export class AdminCustomersController {
   @Patch(':id/status')
   @ApiOperation({ summary: 'Block / unblock a customer' })
   async setActive(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetActiveDto) {
-    return toUserView(await this.users.setActive(id, 'CUSTOMER', dto.isActive));
+    const user = await this.users.setActive(id, 'CUSTOMER', dto.isActive);
+    if (!dto.isActive) this.notifications.forceLogoutUser(id); // signed in somewhere: cut it now
+    return toUserView(user);
   }
 }

@@ -17,6 +17,7 @@ import {
   CustomerPaymentsController,
   CustomerSupportController,
 } from './customer-checkout.controller';
+import { NotificationsModule } from '../../modules/notifications/notifications.module';
 import { CustomerOrdersController } from './customer-orders.controller';
 import { CustomerProfileController } from './customer-profile.controller';
 
@@ -25,7 +26,7 @@ import { CustomerProfileController } from './customer-profile.controller';
  * It only composes domain modules - no business logic lives here, so it can change independently of Admin/Driver.
  */
 @Module({
-  imports: [AuthModule, UsersModule, CatalogModule, AddressesModule, OrdersModule, CouponsModule, PaymentsModule, HubsModule, SupportModule],
+  imports: [AuthModule, NotificationsModule, UsersModule, CatalogModule, AddressesModule, OrdersModule, CouponsModule, PaymentsModule, HubsModule, SupportModule],
   controllers: [
     CustomerAuthController,
     CustomerProfileController,

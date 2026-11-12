@@ -4,13 +4,14 @@ import { Throttle } from '@nestjs/throttler';
 import { Message } from '../../common/api-response';
 import { Auth, CurrentUser, Public, ResponseMessage } from '../../common/decorators';
 import { AuthService } from '../../modules/auth/auth.service';
+import { NotificationsService } from '../../modules/notifications/notifications.service';
 import { LogoutDto, RefreshTokenDto } from '../shared/shared.dto';
-import { IdentifierDto, MultiRoleOtpDto, MultiRoleResendDto, MultiRoleSelectDto, MultiRoleStartDto, SendOtpDto, SwitchRoleDto, VerifyOtpDto } from './dto/customer.dto';
+import { IdentifierDto, MultiRoleOtpDto, MultiRoleResendDto, MultiRoleSelectDto, MultiRoleStartDto, SendOtpDto, SlowReportDto, SwitchRoleDto, VerifyOtpDto } from './dto/customer.dto';
 
 @ApiTags('Customer · Auth')
 @Controller('auth')
 export class CustomerAuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly auth: AuthService, private readonly notifications: NotificationsService) {}
 
   @Public()
   @Post('lookup')
@@ -78,6 +79,15 @@ export class CustomerAuthController {
   @ApiOperation({ summary: 'Step 3: sign in as the chosen role' })
   multiRoleSelect(@Body() dto: MultiRoleSelectDto) {
     return this.auth.multiRoleSelect(dto.selectionToken, dto.role);
+  }
+
+  @Auth()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('slow-report')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Any signed-in user: this phone was hanging. Tells the super admins (at most once per 30 minutes per person)' })
+  slowReport(@CurrentUser('id') userId: string, @Body() dto: SlowReportDto) {
+    return this.notifications.reportSlowDevice(userId, dto);
   }
 
   @Auth()

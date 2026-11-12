@@ -88,4 +88,13 @@ describe('AuthService multi-role sign-in', () => {
     const r = await service.loginWithPassword(PHONE, 'DAS@3781', 'ADMIN');
     expect(r.user.role).toBe('ADMIN');
   });
+
+  it('switches a signed-in session to another role of the same account, and refuses a role it does not have', async () => {
+    const r = await service.switchRole('u1', 'DRIVER');
+    expect(r.user.role).toBe('DRIVER');
+    expect((service as any).jwt.decode(r.tokens.accessToken).role).toBe('DRIVER');
+    await expect(service.switchRole('u1', 'SUPERADMIN')).rejects.toThrow(/does not have that role/);
+    user.isActive = false;
+    await expect(service.switchRole('u1', 'DRIVER')).rejects.toThrow();
+  });
 });

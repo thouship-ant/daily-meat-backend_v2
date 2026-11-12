@@ -263,13 +263,13 @@ export class UsersService {
   }
 
   /** Admins of one hub (plus admins without a hub, and super admins). */
-  async pushTokensForHubAdmins(hubId: number | null): Promise<string[]> {
+  async pushTokensForHubAdmins(hubId: number | null, opts: { superAdmins?: boolean } = {}): Promise<string[]> {
     const users = await this.prisma.user.findMany({
       where: {
         isActive: true,
         pushToken: { not: null },
         OR: [
-          { role: 'SUPERADMIN' as Role },
+          ...(opts.superAdmins === false ? [] : [{ role: 'SUPERADMIN' as Role }]),
           { role: 'ADMIN' as Role, ...(hubId == null ? {} : { OR: [{ hubId }, { hubId: null }] }) },
         ],
       },
@@ -278,17 +278,23 @@ export class UsersService {
     return [...new Set(users.flatMap((u) => this.splitTokens(u)))];
   }
 
-  async pushTokensForRole(role: Role): Promise<string[]> {
+  async pushTokensForRole(role: Role, opts: { superAdmins?: boolean } = {}): Promise<string[]> {
     const users = await this.prisma.user.findMany({
       where: {
         isActive: true,
         pushToken: { not: null },
         // an account that holds the role as an extra role gets its alerts too; super admins get the admin alerts
-        OR: [{ role }, { additionalRoles: { has: role } }, ...(role === 'ADMIN' ? [{ role: 'SUPERADMIN' as Role }] : [])],
+        OR: [{ role }, { additionalRoles: { has: role } }, ...(role === 'ADMIN' && opts.superAdmins !== false ? [{ role: 'SUPERADMIN' as Role }] : [])],
       },
       select: { pushToken: true },
     });
     return [...new Set(users.flatMap((u) => this.splitTokens(u)))];
+  }
+
+  /** Ids of the active accounts that hold a role (e.g. every super admin, to reach them over the live socket). */
+  async idsForRole(role: Role): Promise<string[]> {
+    const rows = await this.prisma.user.findMany({ where: { isActive: true, OR: [{ role }, { additionalRoles: { has: role } }] }, select: { id: true } });
+    return rows.map((r) => r.id);
   }
 
   // ---------- admin: customers & drivers ----------

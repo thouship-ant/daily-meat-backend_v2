@@ -17,6 +17,7 @@ import { CustomerDirectoryService, CustomerFilter } from '../../modules/users/cu
 import { DriverHubsService } from '../../modules/users/driver-hubs.service';
 import { asText, toCsv } from '../../common/utils/csv';
 import { ReportsService } from '../../modules/reports/reports.service';
+import { StaffService } from '../../modules/users/staff.service';
 import { UsersService } from '../../modules/users/users.service';
 import { toUserView } from '../../modules/users/user.mapper';
 import {
@@ -31,6 +32,9 @@ import {
   SetDriverHubDto,
   CustomersQueryDto,
   ReportQueryDto,
+  StaffQueryDto,
+  AddNumberDto,
+  UpdateStaffDto,
   CreateDriverHubAssignmentDto,
   UpdateOrderStatusDto,
   UsersQueryDto,
@@ -76,6 +80,42 @@ export class AdminAnalysisController {
   @ApiOperation({ summary: 'Gross sales, profit and distinct order counts per category for a period' })
   categoryWise(@Query() q: DashboardQueryDto) {
     return this.queries.categoryAnalytics(q.filter, q.startDate, q.endDate, q.hubId);
+  }
+}
+
+@ApiTags('Admin · Staff accounts')
+@Auth('SUPERADMIN')
+@Controller('staff')
+export class AdminStaffController {
+  constructor(private readonly staff: StaffService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Accounts that have a role (Admin, Driver or Customer), with search' })
+  async list(@Query() q: StaffQueryDto) {
+    const { items, total } = await this.staff.list(q.role, { skip: q.skip, take: q.limit, search: q.search });
+    return new Paginated(items, total, q.page, q.limit);
+  }
+
+  @Post()
+  @ApiOperation({ summary: 'Add a mobile number with one or more roles (an existing number gets the extra roles)' })
+  async add(@Body() dto: AddNumberDto) {
+    const r = await this.staff.addNumber(dto);
+    return { ...r.user, created: r.created };
+  }
+
+  @Patch(':id')
+  @ResponseMessage('Updated.')
+  @ApiOperation({ summary: 'Change the name and / or mobile number (the person signs in again with the new number)' })
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStaffDto, @CurrentUser('id') actorId: string) {
+    return this.staff.updateProfile(id, dto, actorId);
+  }
+
+  @Post(':id/reset-password')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Reset to the starting password (Admin: DAS@3781, Driver: Dvr@7939) and end their sessions' })
+  async resetPassword(@Param('id', ParseUUIDPipe) id: string) {
+    await this.staff.resetPassword(id);
+    return new Message('Password reset.');
   }
 }
 
@@ -369,11 +409,12 @@ export class AdminCustomersController {
   async get(@Param('id', ParseUUIDPipe) id: string, @Query() q: CustomerDetailQueryDto) {
     const user = await this.users.getById(id);
     const before = q.before ? new Date(q.before) : null;
-    const [{ items, total }, activity, saved, ordersBefore] = await Promise.all([
+    const [{ items, total }, activity, saved, ordersBefore, deliveredRevenue] = await Promise.all([
       this.queries.listForCustomer(id, q.skip, q.status === 'DELIVERED' ? Math.max(q.limit, 50) : q.limit, q.status),
       this.users.getActivity(id),
       this.addresses.list(id),
       before && !isNaN(before.getTime()) ? this.queries.countDeliveredBefore(id, before) : Promise.resolve(undefined),
+      this.queries.deliveredRevenue(id),
     ]);
 
     // Home 1, Home 2, Work 1 ... ; any other title is shown as "Other - <title>"; oldest first
@@ -400,6 +441,7 @@ export class AdminCustomersController {
       ...toUserView(user),
       ...activity,
       orderCount: total,
+      deliveredRevenue,
       ...(ordersBefore !== undefined ? { ordersBefore } : {}),
       addresses,
       recentOrders: items.map((o) => presentOrder(o, ADMIN_VIEW)),

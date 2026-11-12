@@ -18,6 +18,7 @@ import {
   AdminDriversController,
   AdminOrdersController,
   AdminReportsController,
+  AdminStaffController,
 } from './admin-operations.controller';
 import { AdminContactController, AdminCouponsController, AdminHubsController, AdminMarketingController, AdminSellerBillsController, AdminSlotsController, AdminTicketsController } from './admin-store.controller';
 
@@ -29,6 +30,7 @@ import { AdminContactController, AdminCouponsController, AdminHubsController, Ad
     AdminDashboardController,
     AdminAnalysisController,
     AdminReportsController,
+    AdminStaffController,
     AdminMarketingController,
     AdminContactController,
     AdminSellerBillsController,

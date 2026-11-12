@@ -60,6 +60,12 @@ export class OrderQueryService {
     return this.prisma.order.count({ where: { userId, status: 'DELIVERED', createdAt: { lt: before } } });
   }
 
+  /** Total value of every delivered order of this customer (the customer page "Revenue"). */
+  async deliveredRevenue(userId: string): Promise<number> {
+    const r = await this.prisma.order.aggregate({ where: { userId, status: 'DELIVERED' }, _sum: { totalAmount: true } });
+    return Number(r._sum.totalAmount ?? 0);
+  }
+
   async getForCustomer(userId: string, id: string): Promise<OrderWithRelations> {
     const order = await this.prisma.order.findFirst({ where: { id, userId }, include: ORDER_INCLUDE });
     if (!order) throw ApiException.notFound('Order');

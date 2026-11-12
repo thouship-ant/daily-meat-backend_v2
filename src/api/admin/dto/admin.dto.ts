@@ -170,6 +170,28 @@ export class CreateDriverDto {
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsEmail() email?: string;
 }
 
+const MOBILE = /^\+91[6-9]\d{9}$/;
+
+export class StaffQueryDto extends PaginationDto {
+  @ApiProperty({ enum: ['ADMIN', 'DRIVER', 'CUSTOMER'] }) @IsIn(['ADMIN', 'DRIVER', 'CUSTOMER']) role: 'ADMIN' | 'DRIVER' | 'CUSTOMER';
+  @ApiPropertyOptional({ description: 'Name or phone contains' }) @IsOptional() @Transform(trim) @IsString() @MaxLength(60) search?: string;
+}
+
+export class AddNumberDto {
+  @ApiProperty({ example: '+919876543210' }) @Transform(trim) @Matches(MOBILE, { message: 'Enter a valid Indian mobile number (+91 followed by 10 digits).' }) phone: string;
+  @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @Length(1, 100) name?: string;
+  @ApiProperty({ enum: ['ADMIN', 'DRIVER', 'CUSTOMER'], isArray: true }) @IsArray() @ArrayMinSize(1) @IsIn(['ADMIN', 'DRIVER', 'CUSTOMER'], { each: true }) roles: ('ADMIN' | 'DRIVER' | 'CUSTOMER')[];
+  @ApiPropertyOptional({ description: 'Hub for a new Admin / Driver (defaults to the only hub when there is just one)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
+}
+
+export class UpdateStaffDto {
+  @ApiPropertyOptional({ description: 'The hub this admin / driver works for; null = none' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number | null;
+  @ApiPropertyOptional({ enum: ['ADMIN', 'DRIVER', 'CUSTOMER'], isArray: true, description: 'The roles this account may also sign in as (besides its main role)' })
+  @IsOptional() @IsArray() @IsIn(['ADMIN', 'DRIVER', 'CUSTOMER'], { each: true }) additionalRoles?: ('ADMIN' | 'DRIVER' | 'CUSTOMER')[];
+  @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @MaxLength(100) name?: string;
+  @ApiPropertyOptional({ example: '+919876543210' }) @IsOptional() @Transform(trim) @Matches(MOBILE, { message: 'Enter a valid Indian mobile number (+91 followed by 10 digits).' }) phone?: string;
+}
+
 export class SetDriverHubDto {
   @ApiPropertyOptional({ description: 'The hub the driver normally works for; null/omitted = no hub' })
   @IsOptional()

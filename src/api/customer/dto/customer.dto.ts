@@ -52,6 +52,14 @@ export class MultiRoleSelectDto {
   @ApiProperty({ enum: ['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER'] }) @IsIn(['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER']) role: 'SUPERADMIN' | 'ADMIN' | 'DRIVER' | 'CUSTOMER';
 }
 
+export class SlowReportDto {
+  @ApiProperty({ enum: ['app_frozen', 'no_server_answer'] }) @IsIn(['app_frozen', 'no_server_answer']) reason: 'app_frozen' | 'no_server_answer';
+  @ApiProperty({ description: 'How long the phone was hanging, in seconds' }) @Type(() => Number) @IsNumber() @Min(0) @Max(86400) seconds: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(60) network?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(30) appVersion?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) platform?: string;
+}
+
 export class SwitchRoleDto {
   @ApiProperty({ enum: ['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER'] }) @IsIn(['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER']) role: 'SUPERADMIN' | 'ADMIN' | 'DRIVER' | 'CUSTOMER';
 }

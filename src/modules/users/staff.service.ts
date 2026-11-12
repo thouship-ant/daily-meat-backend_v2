@@ -19,10 +19,10 @@ export class StaffService {
     private readonly config: ConfigService,
   ) {}
 
-  /** Password a reset sets: Admin accounts and Driver accounts have their own. Customers have none. */
+  /** Password a reset sets (an empty setting counts as not set, so it can never become an empty password): Admin accounts and Driver accounts have their own. Customers have none. */
   passwordFor(role: Role): string | null {
-    if (role === 'ADMIN' || role === 'SUPERADMIN') return this.config.get<string>('STAFF_ADMIN_DEFAULT_PASSWORD') ?? 'DAS@3781';
-    if (role === 'DRIVER') return this.config.get<string>('STAFF_DRIVER_DEFAULT_PASSWORD') ?? 'Dvr@7939';
+    if (role === 'ADMIN' || role === 'SUPERADMIN') return this.config.get<string>('STAFF_ADMIN_DEFAULT_PASSWORD') || 'DAS@3781';
+    if (role === 'DRIVER') return this.config.get<string>('STAFF_DRIVER_DEFAULT_PASSWORD') || 'Dvr@7939';
     return null;
   }
 

@@ -123,4 +123,12 @@ describe('StaffService', () => {
     await already.svc.addNumber({ phone: '+919000000032', roles: ['DRIVER'] });
     expect(already.profiles).toEqual([]);
   });
+
+  it('an empty STAFF_*_DEFAULT_PASSWORD setting falls back to the built-in password, never an empty one', () => {
+    const prisma: any = {};
+    const config: any = { get: () => '' }; // what the container gives for a variable that is set but empty
+    const svc = new StaffService(prisma, {} as any, config);
+    expect(svc.passwordFor('ADMIN')).toBe('DAS@3781');
+    expect(svc.passwordFor('DRIVER')).toBe('Dvr@7939');
+  });
 });

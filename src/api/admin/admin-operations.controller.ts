@@ -462,12 +462,12 @@ export class AdminCustomersController {
   async get(@Param('id', ParseUUIDPipe) id: string, @Query() q: CustomerDetailQueryDto) {
     const user = await this.users.getById(id);
     const before = q.before ? new Date(q.before) : null;
-    const [{ items, total }, activity, saved, ordersBefore, deliveredRevenue] = await Promise.all([
+    const [{ items, total }, activity, saved, ordersBefore, deliveredProfit] = await Promise.all([
       this.queries.listForCustomer(id, q.skip, q.status === 'DELIVERED' ? Math.max(q.limit, 50) : q.limit, q.status),
       this.users.getActivity(id),
       this.addresses.list(id),
       before && !isNaN(before.getTime()) ? this.queries.countDeliveredBefore(id, before) : Promise.resolve(undefined),
-      this.queries.deliveredRevenue(id),
+      this.queries.deliveredProfit(id),
     ]);
 
     // Home 1, Home 2, Work 1 ... ; any other title is shown as "Other - <title>"; oldest first
@@ -494,7 +494,7 @@ export class AdminCustomersController {
       ...toUserView(user),
       ...activity,
       orderCount: total,
-      deliveredRevenue,
+      deliveredProfit,
       ...(ordersBefore !== undefined ? { ordersBefore } : {}),
       addresses,
       recentOrders: items.map((o) => presentOrder(o, ADMIN_VIEW)),

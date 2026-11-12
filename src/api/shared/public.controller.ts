@@ -25,7 +25,13 @@ export class PublicController {
     const cache = await this.cache.health();
     try {
       await this.prisma.$queryRaw`SELECT 1`;
-      return { status: 'ok', uptime: Math.round(process.uptime()), database: 'up', cache };
+      // new code on an old database (migrations not applied): orders / users queries fail, so say so here
+      const missing = await this.prisma.schemaMissing().catch(() => [] as string[]);
+      if (missing.length) {
+        res.status(HttpStatus.SERVICE_UNAVAILABLE);
+        return { status: 'degraded', uptime: Math.round(process.uptime()), database: 'up', schema: { upToDate: false, missing: missing.slice(0, 30) }, cache };
+      }
+      return { status: 'ok', uptime: Math.round(process.uptime()), database: 'up', schema: { upToDate: true }, cache };
     } catch {
       res.status(HttpStatus.SERVICE_UNAVAILABLE);
       return { status: 'degraded', uptime: Math.round(process.uptime()), database: 'down', cache };

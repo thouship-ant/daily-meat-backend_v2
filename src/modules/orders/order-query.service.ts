@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { ApiException } from '../../common/api-error';
 import { distanceKm } from '../../common/utils/geo';
+import { toMoney } from '../../common/utils/money';
 import { DateRange, istRange, startOfIstDay } from '../../common/utils/time';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { ORDER_INCLUDE, OrderWithRelations } from './order.presenter';
@@ -60,10 +61,13 @@ export class OrderQueryService {
     return this.prisma.order.count({ where: { userId, status: 'DELIVERED', createdAt: { lt: before } } });
   }
 
-  /** Total value of every delivered order of this customer (the customer page "Revenue"). */
-  async deliveredRevenue(userId: string): Promise<number> {
-    const r = await this.prisma.order.aggregate({ where: { userId, status: 'DELIVERED' }, _sum: { totalAmount: true } });
-    return Number(r._sum.totalAmount ?? 0);
+  /**
+   * What the shop earned from this customer: the profit of every delivered order PLUS the delivery charge they paid
+   * (the stored order profit leaves the delivery charge out). Shown as "Revenue" on the customer page.
+   */
+  async deliveredProfit(userId: string): Promise<number> {
+    const r = await this.prisma.order.aggregate({ where: { userId, status: 'DELIVERED' }, _sum: { totalProfit: true, deliveryCharge: true } });
+    return toMoney(Number(r._sum.totalProfit ?? 0) + Number(r._sum.deliveryCharge ?? 0));
   }
 
   async getForCustomer(userId: string, id: string): Promise<OrderWithRelations> {

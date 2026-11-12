@@ -190,7 +190,7 @@ export class OrderQueryService {
         include: { driver: { select: { id: true, name: true, phone: true } } },
       }),
       this.prisma.order.findMany({ where: { status: 'OUT_FOR_DELIVERY', driverId: { not: null } }, select: { driverId: true }, distinct: ['driverId'] }),
-      this.prisma.user.findMany({ where: { role: 'DRIVER', isActive: true }, select: { id: true, name: true, phone: true } }),
+      this.prisma.user.findMany({ where: { role: 'DRIVER', isActive: true, OR: [{ driverProfile: null }, { driverProfile: { status: 'APPROVED' } }] }, select: { id: true, name: true, phone: true } }),
     ]);
     const busyIds = new Set(busy.map((b) => b.driverId));
     // only drivers who work for this order's hub today (drivers with no hub set stay available)

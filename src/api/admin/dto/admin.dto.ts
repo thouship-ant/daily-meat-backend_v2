@@ -170,6 +170,16 @@ export class CreateDriverDto {
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsEmail() email?: string;
 }
 
+export class DriverApplicationsQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'], description: 'Default: everything that was submitted' })
+  @IsOptional() @IsIn(['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED']) status?: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
+}
+
+export class RejectApplicationDto {
+  @ApiProperty({ description: 'What the driver has to fix (shown to the driver)' }) @Transform(trim) @IsString() @Length(3, 300) reason: string;
+}
+
 const MOBILE = /^\+91[6-9]\d{9}$/;
 
 export class StaffQueryDto extends PaginationDto {
@@ -227,6 +237,7 @@ export class CustomerDetailQueryDto extends PaginationDto {
 export class CustomersQueryDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'Name, phone or email contains' }) @IsOptional() @Transform(trim) @IsString() @MaxLength(60) search?: string;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({ description: 'Super admin only: show only the customers who deleted their account (they are left out of every other list)' }) @IsOptional() @Transform(toBool) @IsBoolean() deleted?: boolean;
   @ApiPropertyOptional({ description: 'Only the customers of this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
   @ApiPropertyOptional({ example: '2026-11-01', description: 'Registered on or after (India time)' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) createdFrom?: string;
   @ApiPropertyOptional({ example: '2026-11-30', description: 'Registered on or before (India time)' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) createdTo?: string;

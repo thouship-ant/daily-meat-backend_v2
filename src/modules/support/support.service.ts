@@ -30,6 +30,13 @@ export class SupportService {
     });
   }
 
+  /** Raised by the system (not the customer): a ticket for one hub, e.g. "account deleted". */
+  createForHub(userId: string, hubId: number | null, dto: { subject: string; message: string }) {
+    return this.prisma.supportTicket.create({
+      data: { userId, subject: dto.subject, message: dto.message, hubId },
+    });
+  }
+
   async listForUser(userId: string, skip: number, take: number) {
     const where: Prisma.SupportTicketWhereInput = { userId };
     const [items, total] = await this.prisma.$transaction([
@@ -47,7 +54,7 @@ export class SupportService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.supportTicket.findMany({
         where,
-        include: { user: { select: { id: true, name: true, phone: true } } },
+        include: { user: { select: { id: true, name: true, phone: true } }, hub: { select: { id: true, name: true } } },
         orderBy: { createdAt: 'desc' },
         skip: opts.skip,
         take: opts.take,

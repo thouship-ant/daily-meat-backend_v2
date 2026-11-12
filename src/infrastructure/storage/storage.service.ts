@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
@@ -35,6 +35,43 @@ export class StorageService {
     }
     const base = this.config.get<string>('S3_PUBLIC_BASE_URL')?.replace(/\/$/, '');
     return base ? `${base}/${key}` : `https://${bucket}.s3.${this.config.get('AWS_REGION')}.amazonaws.com/${key}`;
+  }
+
+  /**
+   * Identity documents (Aadhaar photos, selfie): stored under kyc/ in S3_KYC_BUCKET (or S3_BUCKET) and never turned
+   * into a public URL. Returns the storage KEY; the file is read back only through getPrivate(), i.e. through an
+   * authenticated API call.
+   */
+  async uploadPrivate(file: Express.Multer.File, folder: string): Promise<string> {
+    if (!ALLOWED_MIME.has(file.mimetype)) {
+      throw ApiException.badRequest(ErrorCode.VALIDATION_FAILED, 'Only JPEG, PNG or WebP images are allowed.');
+    }
+    const bucket = this.kycBucket();
+    const key = `kyc/${folder}/${randomUUID()}${extname(file.originalname).toLowerCase() || '.jpg'}`;
+    try {
+      await this.getClient().send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: file.buffer, ContentType: file.mimetype }));
+    } catch (e) {
+      this.logger.error(`Private upload failed: ${(e as Error).message}`);
+      throw ApiException.upstream('Could not upload the photo. Please try again.');
+    }
+    return key;
+  }
+
+  async getPrivate(key: string): Promise<{ body: Buffer; contentType: string }> {
+    try {
+      const res = await this.getClient().send(new GetObjectCommand({ Bucket: this.kycBucket(), Key: key }));
+      const bytes = await res.Body!.transformToByteArray();
+      return { body: Buffer.from(bytes), contentType: res.ContentType || 'image/jpeg' };
+    } catch (e) {
+      this.logger.error(`Private read failed (${key}): ${(e as Error).message}`);
+      throw ApiException.notFound('Document');
+    }
+  }
+
+  private kycBucket(): string {
+    const bucket = this.config.get<string>('S3_KYC_BUCKET') || this.config.get<string>('S3_BUCKET');
+    if (!bucket) throw ApiException.badRequest(ErrorCode.UPSTREAM_FAILED, 'Document storage is not configured (S3_KYC_BUCKET / S3_BUCKET).');
+    return bucket;
   }
 
   private getClient(): S3Client {

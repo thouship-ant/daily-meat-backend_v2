@@ -16,7 +16,7 @@ export const envValidationSchema = Joi.object({
   REFRESH_TOKEN_EXPIRES_IN: Joi.string().default('30d'),
 
   // Business rules
-  COD_MAX_AMOUNT: Joi.number().default(2000),
+  COD_MAX_AMOUNT: Joi.number().default(3000),
   OTP_TTL_SECONDS: Joi.number().default(600),
   OTP_MAX_ATTEMPTS: Joi.number().default(5),
   MAX_ACCOUNTS_PER_DEVICE: Joi.number().default(2),
@@ -53,6 +53,15 @@ export const envValidationSchema = Joi.object({
   AWS_SECRET_ACCESS_KEY: Joi.string().allow('').default(''),
   S3_BUCKET: Joi.string().allow('').default(''),
   S3_PUBLIC_BASE_URL: Joi.string().allow('').default(''),
+  // Aadhaar / selfie photos: a PRIVATE bucket (never given a public URL). Empty = the S3_BUCKET above (keys under kyc/).
+  S3_KYC_BUCKET: Joi.string().allow('').default(''),
+  // New driver starting deposit (T-shirt + basket): list price (struck out) and the offer price actually charged
+  DRIVER_DEPOSIT_LIST_PRICE: Joi.number().default(2000),
+  DRIVER_DEPOSIT_PRICE: Joi.number().default(1500),
+  // DigiLocker (Aadhaar e-KYC). Empty = off: drivers upload the Aadhaar photos and an admin checks them
+  DIGILOCKER_CLIENT_ID: Joi.string().allow('').default(''),
+  DIGILOCKER_CLIENT_SECRET: Joi.string().allow('').default(''),
+  DIGILOCKER_REDIRECT_URI: Joi.string().allow('').default(''),
 
   // App version gate
   APP_ANDROID_LATEST_BUILD: Joi.number().default(0),

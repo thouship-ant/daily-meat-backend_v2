@@ -171,6 +171,10 @@ export class UsersService {
     };
   }
 
+  countOrders(userId: string): Promise<number> {
+    return this.prisma.order.count({ where: { userId } });
+  }
+
   /** Customer "delete my account": removes personal data but keeps the row so past orders still add up. */
   async anonymize(id: string): Promise<void> {
     await this.prisma.$transaction([
@@ -332,10 +336,15 @@ export class UsersService {
     return { items, total };
   }
 
+  /** A new driver starts onboarding (KYC, hub, selfie, vehicle, deposit, approval). Drivers with no row are the old ones. */
+  async ensureDriverProfile(userId: string): Promise<void> {
+    await this.prisma.driverProfile.upsert({ where: { userId }, update: {}, create: { userId } });
+  }
+
   async createDriver(dto: { name: string; phone: string; password: string; email?: string }): Promise<User> {
     const exists = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
     if (exists) throw ApiException.conflict('A user with this phone number already exists.');
-    return this.create({
+    const driver = await this.create({
       name: dto.name,
       phone: dto.phone,
       email: dto.email ? dto.email.toLowerCase() : null,
@@ -343,6 +352,8 @@ export class UsersService {
       role: 'DRIVER',
       isProfileCompleted: true,
     });
+    await this.ensureDriverProfile(driver.id);
+    return driver;
   }
 
   async setActive(id: string, role: Role, isActive: boolean): Promise<User> {

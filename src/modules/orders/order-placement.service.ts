@@ -194,42 +194,25 @@ export class OrderPlacementService {
       freeDeliveryThreshold: hub.deliveryFeeStrategy === 'amount' ? hub.minOrderForFreeDelivery : null,
       coupon: p.validated ? { id: p.validated.coupon.id, code: p.validated.coupon.code } : null,
       schedule: { date: deliveryDate, slotId: slot?.id ?? null, slotLabel: slot?.label ?? null },
-      codAvailable: p.total <= Number(this.config.get('COD_MAX_AMOUNT') ?? 2000) || (await this.codStatus(user.id)).fallbackAllowed,
+      codAvailable: p.total <= Number(this.config.get('COD_MAX_AMOUNT') ?? 3000),
     };
   }
 
   /**
-   * Cash on Delivery above the COD limit is normally refused ("pay online"). One exception: when the customer's
-   * online payment did not go through (failed, cancelled or still pending) they may place ONE such COD order.
-   *  - the exception needs exactly one unpaid online attempt in the last 24h; after a second failed online
-   *    payment the customer is asked to try another payment type instead;
-   *  - only one over-limit COD order can be open (not delivered / cancelled) at a time;
-   *  - orders up to the limit are never affected, and a customer may place any number of them.
+   * Cash on Delivery is available up to COD_MAX_AMOUNT (default Rs. 3000). The old "pay online first / only one open
+   * order" exception is gone: when an online payment fails, the SAME order carries on as COD (up to the limit) or is
+   * held as FAILED (above it), see OrderLifecycleService.onlinePaymentFailed. Kept for app builds that still ask.
    */
-  async codStatus(userId: string, db: Tx | PrismaService = this.prisma) {
-    const limit = Number(this.config.get('COD_MAX_AMOUNT') ?? 2000);
-    const since = new Date(Date.now() - 24 * 3600_000);
-    const [unpaidOnlineAttempts, openOverLimitCod] = await Promise.all([
-      db.order.count({
-        where: { userId, paymentMethod: 'ONLINE', paymentStatus: { in: ['PENDING', 'FAILED'] }, createdAt: { gte: since } },
-      }),
-      db.order.count({
-        where: { userId, paymentMethod: 'COD', totalAmount: { gt: limit }, status: { notIn: ['DELIVERED', 'CANCELLED', 'FAILED'] } },
-      }),
-    ]);
-    let reason: 'ALLOWED' | 'PAY_ONLINE_FIRST' | 'ONLINE_FAILED_AGAIN' | 'ALREADY_USED' = 'ALLOWED';
-    let message = '';
-    if (unpaidOnlineAttempts === 0) {
-      reason = 'PAY_ONLINE_FIRST';
-      message = `Cash on Delivery is not available for orders above Rs. ${limit}. Please pay online.`;
-    } else if (unpaidOnlineAttempts >= 2) {
-      reason = 'ONLINE_FAILED_AGAIN';
-      message = `Online payment did not go through again. Cash on Delivery is not available for orders above Rs. ${limit}, so please try to make payment with another payment type.`;
-    } else if (openOverLimitCod > 0) {
-      reason = 'ALREADY_USED';
-      message = `You already have a Cash on Delivery order above Rs. ${limit} in progress. Please pay online or with another payment type for this order.`;
-    }
-    return { limit, unpaidOnlineAttempts, openOverLimitCod, fallbackAllowed: reason === 'ALLOWED', reason, message };
+  codStatus(_userId?: string) {
+    const limit = Number(this.config.get('COD_MAX_AMOUNT') ?? 3000);
+    return Promise.resolve({
+      limit,
+      unpaidOnlineAttempts: 0,
+      openOverLimitCod: 0,
+      fallbackAllowed: false,
+      reason: 'PAY_ONLINE_FIRST' as const,
+      message: `Cash on Delivery is not available for orders above Rs. ${limit}. Please pay online.`,
+    });
   }
 
   /** Checks where/when the order can be delivered (hub, pause, slot, date, opening hours). Throws coded errors. */
@@ -331,16 +314,13 @@ export class OrderPlacementService {
     }
 
     const total = toMoney(beforeDiscount - discount);
-    const codMax = Number(this.config.get('COD_MAX_AMOUNT') ?? 2000);
+    const codMax = Number(this.config.get('COD_MAX_AMOUNT') ?? 3000);
     if (paymentMethod === 'COD' && total > codMax) {
-      const cod = await this.codStatus(userId, db);
-      if (!cod.fallbackAllowed) {
-        throw ApiException.badRequest(ErrorCode.COD_LIMIT_EXCEEDED, cod.message, {
-          limit: codMax,
-          unpaidOnlineAttempts: cod.unpaidOnlineAttempts,
-          reason: cod.reason,
-        });
-      }
+      throw ApiException.badRequest(
+        ErrorCode.COD_LIMIT_EXCEEDED,
+        `Cash on Delivery is not available for orders above Rs. ${codMax}. Please pay online.`,
+        { limit: codMax, reason: 'PAY_ONLINE_FIRST' },
+      );
     }
     return { lines, subtotal, totalCost, deliveryCharge, discount, total, validated };
   }

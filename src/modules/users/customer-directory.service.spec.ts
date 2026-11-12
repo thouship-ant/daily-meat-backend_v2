@@ -43,4 +43,13 @@ describe('CustomerDirectoryService', () => {
     ]).findAll({}, 'pincode', 'asc');
     expect(rows.map((r) => r.id)).toEqual(['c', 'b', 'a']);
   });
+
+  it('lists only the deleted accounts when asked, and leaves them out of every other list', () => {
+    const normal: any = make([]).buildWhere({});
+    expect(JSON.stringify(normal)).toContain('"not":{"startsWith":"del_"}');
+    const deleted: any = make([]).buildWhere({ deleted: true, isActive: true });
+    const text = JSON.stringify(deleted);
+    expect(text).toContain('"phone":{"startsWith":"del_"}');
+    expect(text).not.toContain('"isActive"'); // a deleted account is always inactive: that filter is ignored
+  });
 });

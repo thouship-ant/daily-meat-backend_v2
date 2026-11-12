@@ -38,6 +38,15 @@ enum OrderStatus {
   @@map("enum_orders_status")
 }
 
+enum DriverOnboardingStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+
+  @@map("enum_driver_profiles_status")
+}
+
 enum PaymentStatus {
   PENDING
   PAID
@@ -135,6 +144,7 @@ model User {
   hubId          Int?                  @map("hub_id")
   hub            Hub?                  @relation("DriverHomeHub", fields: [hubId], references: [id], onDelete: SetNull)
   hubAssignments DriverHubAssignment[]
+  driverProfile  DriverProfile?
 
   addresses         Address[]
   orders            Order[]            @relation("CustomerOrders")
@@ -247,6 +257,8 @@ model Order {
   payClosedNotifiedAt      DateTime?     @map("pay_closed_notified_at") @db.Timestamptz(6)
   deliveryInstruction     String?       @map("delivery_instruction")
   failureReason            String?       @map("failure_reason")
+  /// Online payment attempts that did not go through (the app asks the customer to retry up to 3 times)
+  paymentAttempts          Int           @default(0) @map("payment_attempts")
   deliveredAt              DateTime?     @map("delivered_at") @db.Timestamptz(6)
   deliveryDate             DateTime?     @map("delivery_date") @db.Date
   deliverySlotId           String?       @map("delivery_slot_id") @db.Uuid
@@ -348,6 +360,8 @@ model Hub {
   sellerBills            SellerBill[]
   contactMessages        ContactMessage[]
   scheduledNotifications ScheduledNotification[]
+  supportTickets         SupportTicket[]
+  driverProfiles         DriverProfile[]
 
   @@map("shop_settings")
 }
@@ -411,10 +425,63 @@ model SupportTicket {
   createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /// The hub the ticket is for (set for tickets the system raises, e.g. an account deletion: the customer's hub)
+  hubId Int? @map("hub_id")
+
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   order Order? @relation(fields: [orderId], references: [id])
+  hub   Hub?   @relation(fields: [hubId], references: [id], onDelete: SetNull)
 
+  @@index([hubId], map: "support_tickets_hub_idx")
   @@map("support_tickets")
+}
+
+/// A new driver's onboarding: Aadhaar KYC, hub, selfie, vehicle and the starting deposit, then admin approval.
+/// A driver WITHOUT a row is a driver from before onboarding existed and counts as approved.
+model DriverProfile {
+  id     String                 @id @default(uuid()) @db.Uuid
+  userId String                 @unique @map("user_id") @db.Uuid
+  status DriverOnboardingStatus @default(DRAFT)
+
+  /// Only the last 4 digits of the Aadhaar number are kept (never the full number); the card photos are the proof
+  aadhaarLast4    String?   @map("aadhaar_last4") @db.VarChar(4)
+  aadhaarName     String?   @map("aadhaar_name") @db.VarChar(100)
+  /// private storage keys (never public URLs): shown to admins only through the authenticated documents endpoint
+  aadhaarFrontKey String?   @map("aadhaar_front_key")
+  aadhaarBackKey  String?   @map("aadhaar_back_key")
+  /// DIGILOCKER (verified by DigiLocker) or MANUAL (photos, checked by an admin)
+  kycMethod       String?   @map("kyc_method") @db.VarChar(20)
+  kycVerifiedAt   DateTime? @map("kyc_verified_at") @db.Timestamptz(6)
+
+  hubId     Int?    @map("hub_id")
+  selfieKey String? @map("selfie_key")
+
+  vehicleModel String? @map("vehicle_model") @db.VarChar(80)
+  vehicleRegNo String? @map("vehicle_reg_no") @db.VarChar(20)
+  vehicleYear  Int?    @map("vehicle_year")
+
+  /// starting deposit for the T-shirt and basket
+  depositAmount     Float     @default(0) @map("deposit_amount")
+  depositPaid       Boolean   @default(false) @map("deposit_paid")
+  depositGatewayId  String?   @unique @map("deposit_gateway_id")
+  depositCfOrderId  String?   @map("deposit_cf_order_id")
+  depositSessionId  String?   @map("deposit_session_id")
+  depositPaidAt     DateTime? @map("deposit_paid_at") @db.Timestamptz(6)
+
+  submittedAt  DateTime? @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt   DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewedById String?   @map("reviewed_by_id") @db.Uuid
+  rejectReason String?   @map("reject_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hub  Hub? @relation(fields: [hubId], references: [id], onDelete: SetNull)
+
+  @@index([status], map: "driver_profiles_status_idx")
+  @@index([hubId], map: "driver_profiles_hub_idx")
+  @@map("driver_profiles")
 }
 
 model Banner {

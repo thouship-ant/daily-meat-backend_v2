@@ -86,6 +86,27 @@ export class HubsService {
     };
   }
 
+  /**
+   * The hub a customer belongs to: the hub of their latest order, else the hub serving their saved address, else the
+   * one serving the pincode they first opened the app in, else the default hub. Null only when there is no hub.
+   */
+  async hubForCustomer(userId: string): Promise<HubView | null> {
+    const last = await this.prisma.order.findFirst({ where: { userId, hubId: { not: null } }, orderBy: { createdAt: 'desc' }, select: { hubId: true } });
+    if (last?.hubId) {
+      const hub = await this.prisma.hub.findUnique({ where: { id: last.hubId } });
+      if (hub) return this.decode(hub);
+    }
+    const address = await this.prisma.address.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' }, select: { pincode: true } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { signupPincode: true } });
+    for (const pin of [address?.pincode, user?.signupPincode]) {
+      if (pin) {
+        const hub = await this.findForPincode(pin);
+        if (hub) return hub;
+      }
+    }
+    return this.getDefault();
+  }
+
   /** First active hub: used when nothing says which hub is meant (guests). */
   async getDefault(): Promise<HubView | null> {
     const active = await this.listActive();

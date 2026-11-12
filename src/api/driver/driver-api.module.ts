@@ -1,10 +1,15 @@
-import { Body, Controller, Get, HttpCode, Module, Param, Post, Put, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, Module, Param, Post, Put, Query, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Message, Paginated } from '../../common/api-response';
 import { Auth, CurrentUser, Public, ResponseMessage } from '../../common/decorators';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { MAX_IMAGE_BYTES } from '../../infrastructure/storage/storage.service';
 import { AuthModule } from '../../modules/auth/auth.module';
+import { DigiLockerService } from '../../modules/driver-onboarding/digilocker.service';
+import { DriverOnboardingModule } from '../../modules/driver-onboarding/driver-onboarding.module';
+import { DriverOnboardingService } from '../../modules/driver-onboarding/driver-onboarding.service';
 import { AuthService } from '../../modules/auth/auth.service';
 import { OrderLifecycleService } from '../../modules/orders/order-lifecycle.service';
 import { OrderQueryService } from '../../modules/orders/order-query.service';
@@ -16,7 +21,7 @@ import { toUserView } from '../../modules/users/user.mapper';
 import { UsersModule } from '../../modules/users/users.module';
 import { UsersService } from '../../modules/users/users.service';
 import { ChangePasswordDto, LogoutDto, PushTokenDto, RefreshTokenDto, StaffLoginDto } from '../shared/shared.dto';
-import { BulkOrdersDto, FailDeliveryDto, LocationDto } from './dto/driver.dto';
+import { BulkOrdersDto, ChooseHubDto, FailDeliveryDto, KycDto, LocationDto, VehicleDto } from './dto/driver.dto';
 
 const DRIVER_VIEW = { navigation: true } as const; // drivers get map links, never cost/profit
 
@@ -74,6 +79,77 @@ export class DriverAuthController {
   async pushToken(@CurrentUser('id') id: string, @Body() dto: PushTokenDto) {
     await this.users.registerPushToken(id, dto);
     return new Message('Push token saved.');
+  }
+}
+
+@ApiTags('Driver · Onboarding')
+@Auth('DRIVER')
+@Controller('onboarding')
+export class DriverOnboardingController {
+  constructor(
+    private readonly onboarding: DriverOnboardingService,
+    private readonly digilocker: DigiLockerService,
+  ) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Where I am in the onboarding (steps, saved details, deposit offer, hubs). `required: false` = nothing to do.' })
+  state(@CurrentUser('id') id: string) {
+    return this.onboarding.state(id);
+  }
+
+  @Put('kyc')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileFieldsInterceptor([{ name: 'front', maxCount: 1 }, { name: 'back', maxCount: 1 }], { limits: { fileSize: MAX_IMAGE_BYTES } }))
+  @ApiOperation({ summary: 'Aadhaar KYC: number (only the last 4 digits are kept), name on the card, front and back photos' })
+  kyc(@CurrentUser('id') id: string, @Body() dto: KycDto, @UploadedFiles() files: { front?: Express.Multer.File[]; back?: Express.Multer.File[] }) {
+    return this.onboarding.saveKyc(id, { aadhaarNumber: dto.aadhaarNumber, name: dto.name }, files?.front?.[0], files?.back?.[0]);
+  }
+
+  @Post('digilocker/start')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Start DigiLocker verification (off until DigiLocker credentials are configured)' })
+  digilockerStart(@CurrentUser('id') id: string) {
+    return this.digilocker.start(id);
+  }
+
+  @Put('hub')
+  @ApiOperation({ summary: 'Choose the city / hub I will work for' })
+  hub(@CurrentUser('id') id: string, @Body() dto: ChooseHubDto) {
+    return this.onboarding.chooseHub(id, dto.hubId);
+  }
+
+  @Post('selfie')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('image', { limits: { fileSize: MAX_IMAGE_BYTES } }))
+  selfie(@CurrentUser('id') id: string, @UploadedFile() file?: Express.Multer.File) {
+    return this.onboarding.saveSelfie(id, file);
+  }
+
+  @Put('vehicle')
+  @ApiOperation({ summary: 'Vehicle model, registration number and year of manufacture' })
+  vehicle(@CurrentUser('id') id: string, @Body() dto: VehicleDto) {
+    return this.onboarding.saveVehicle(id, dto);
+  }
+
+  @Post('deposit/start')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Starting deposit for the T-shirt and basket: opens the payment session' })
+  depositStart(@CurrentUser('id') id: string) {
+    return this.onboarding.startDeposit(id);
+  }
+
+  @Post('deposit/verify')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'After the payment sheet closes: the server asks the gateway whether the deposit was paid' })
+  depositVerify(@CurrentUser('id') id: string) {
+    return this.onboarding.verifyDeposit(id);
+  }
+
+  @Post('submit')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Send the application to the admin (every step must be done and the deposit paid)' })
+  submit(@CurrentUser('id') id: string) {
+    return this.onboarding.submit(id);
   }
 }
 
@@ -191,7 +267,7 @@ export class DriverOrdersController {
 }
 
 @Module({
-  imports: [AuthModule, UsersModule, OrdersModule, TrackingModule],
-  controllers: [DriverAuthController, DriverOrdersController],
+  imports: [AuthModule, UsersModule, OrdersModule, TrackingModule, DriverOnboardingModule],
+  controllers: [DriverAuthController, DriverOnboardingController, DriverOrdersController],
 })
 export class DriverApiModule {}

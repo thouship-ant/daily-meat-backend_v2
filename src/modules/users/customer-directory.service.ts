@@ -6,6 +6,8 @@ import { NOT_DELETED_ACCOUNT } from './user.mapper';
 export interface CustomerFilter {
   search?: string;
   isActive?: boolean;
+  /** only the customers who deleted their account (anonymised, phone del_<timestamp>); every other list leaves them out */
+  deleted?: boolean;
   /** e.g. the customers of one hub */
   extraWhere?: Prisma.UserWhereInput;
   createdFrom?: string; // YYYY-MM-DD (India time), inclusive
@@ -59,8 +61,8 @@ export class CustomerDirectoryService {
   }
 
   buildWhere(f: CustomerFilter): Prisma.UserWhereInput {
-    const and: Prisma.UserWhereInput[] = [{ role: 'CUSTOMER' }, NOT_DELETED_ACCOUNT];
-    if (f.isActive !== undefined) and.push({ isActive: f.isActive });
+    const and: Prisma.UserWhereInput[] = [{ role: 'CUSTOMER' }, f.deleted ? { phone: { startsWith: 'del_' } } : NOT_DELETED_ACCOUNT];
+    if (f.isActive !== undefined && !f.deleted) and.push({ isActive: f.isActive }); // a deleted account is always inactive
     if (f.search) {
       and.push({
         OR: [

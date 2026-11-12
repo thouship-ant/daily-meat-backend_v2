@@ -33,6 +33,11 @@ export function presentOrder(o: OrderWithRelations, opts: PresentOptions = {}) {
     payment: {
       method: o.paymentMethod,
       status: o.paymentStatus,
+      // what the apps print: COD orders are "COD - Pending" until paid; a failed online payment is "Online - Failed"
+      label: o.paymentMethod === 'COD'
+        ? (o.paymentStatus === 'PAID' ? 'COD - Paid' : 'COD - Pending')
+        : o.paymentStatus === 'FAILED' ? 'Online - Failed' : o.paymentStatus === 'PAID' ? 'Online - Paid' : 'Online - Pending',
+      attempts: o.paymentAttempts ?? 0,
       // a COD order can still be paid online until it is out for delivery (+5 minutes)
       onlinePayAvailable: onlinePayState(o).available,
       onlinePayClosesAt: onlinePayState(o).closesAt,

@@ -1,17 +1,26 @@
-import { Body, Controller, Delete, Get, Patch, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Logger, Patch, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Message } from '../../common/api-response';
 import { Auth, CurrentUser } from '../../common/decorators';
 import { toUserView } from '../../modules/users/user.mapper';
+import { HubsService } from '../../modules/hubs/hubs.service';
+import { buildDeletionTicket } from '../../modules/support/account-deletion-ticket';
+import { SupportService } from '../../modules/support/support.service';
 import { UsersService } from '../../modules/users/users.service';
 import { PushTokenDto, UpdateProfileDto } from '../shared/shared.dto';
-import { SignupLocationDto } from './dto/customer.dto';
+import { DeleteAccountDto, SignupLocationDto } from './dto/customer.dto';
 
 @ApiTags('Customer · Profile')
 @Auth('CUSTOMER')
 @Controller('me')
 export class CustomerProfileController {
-  constructor(private readonly users: UsersService) {}
+  private readonly logger = new Logger(CustomerProfileController.name);
+
+  constructor(
+    private readonly users: UsersService,
+    private readonly hubs: HubsService,
+    private readonly support: SupportService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'My profile' })
@@ -29,8 +38,22 @@ export class CustomerProfileController {
 
   @Delete()
   @ApiOperation({ summary: 'Delete my account (personal data removed, order history kept anonymised)' })
-  async remove(@CurrentUser('id') id: string) {
+  async remove(@CurrentUser('id') id: string, @Body() dto: DeleteAccountDto) {
+    // Who they are and which hub they belong to are read BEFORE the account is anonymised: afterwards the name, phone
+    // and addresses are gone. The reason and these details go to the customer's hub as a support ticket.
+    const user = await this.users.getById(id);
+    const [hub, orderCount] = await Promise.all([this.hubs.hubForCustomer(id).catch(() => null), this.users.countOrders(id)]);
+    const ticket = buildDeletionTicket(
+      { name: user.name, phone: user.phone, email: user.email, registeredAt: user.createdAt, orderCount, hubName: hub?.name ?? null },
+      dto.reasonCode,
+      dto.reason,
+    );
     await this.users.anonymize(id);
+    try {
+      await this.support.createForHub(id, hub?.id ?? null, ticket); // after: anonymising removes the account's tickets
+    } catch (e) {
+      this.logger.error(`Could not log the deletion reason for ${id}: ${(e as Error).message}`); // never block the deletion itself
+    }
     return new Message('Account deleted.');
   }
 

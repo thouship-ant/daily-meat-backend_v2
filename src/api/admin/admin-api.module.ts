@@ -3,6 +3,7 @@ import { AddressesModule } from '../../modules/addresses/addresses.module';
 import { AuthModule } from '../../modules/auth/auth.module';
 import { CatalogModule } from '../../modules/catalog/catalog.module';
 import { CouponsModule } from '../../modules/coupons/coupons.module';
+import { DriverOnboardingModule } from '../../modules/driver-onboarding/driver-onboarding.module';
 import { HubsModule } from '../../modules/hubs/hubs.module';
 import { NotificationsModule } from '../../modules/notifications/notifications.module';
 import { OrdersModule } from '../../modules/orders/orders.module';
@@ -15,6 +16,7 @@ import {
   AdminAnalysisController,
   AdminCustomersController,
   AdminDashboardController,
+  AdminDriverApplicationsController,
   AdminDriversController,
   AdminOrdersController,
   AdminReportsController,
@@ -24,7 +26,7 @@ import { AdminContactController, AdminCouponsController, AdminHubsController, Ad
 
 /** Admin API surface (back-office app). Mounted at /admin. */
 @Module({
-  imports: [AddressesModule, AuthModule, UsersModule, OrdersModule, CatalogModule, HubsModule, ReportsModule, CouponsModule, SupportModule, NotificationsModule],
+  imports: [AddressesModule, AuthModule, UsersModule, OrdersModule, CatalogModule, HubsModule, ReportsModule, CouponsModule, SupportModule, NotificationsModule, DriverOnboardingModule],
   controllers: [
     AdminAuthController,
     AdminDashboardController,
@@ -35,6 +37,7 @@ import { AdminContactController, AdminCouponsController, AdminHubsController, Ad
     AdminContactController,
     AdminSellerBillsController,
     AdminOrdersController,
+    AdminDriverApplicationsController,
     AdminDriversController,
     AdminCustomersController,
     AdminCatalogController,

@@ -17,6 +17,7 @@ import { CustomerDirectoryService, CustomerFilter } from '../../modules/users/cu
 import { DriverHubsService } from '../../modules/users/driver-hubs.service';
 import { asText, toCsv } from '../../common/utils/csv';
 import { ReportsService } from '../../modules/reports/reports.service';
+import { DriverOnboardingService, DocumentKind } from '../../modules/driver-onboarding/driver-onboarding.service';
 import { StaffService } from '../../modules/users/staff.service';
 import { UsersService } from '../../modules/users/users.service';
 import { toUserView } from '../../modules/users/user.mapper';
@@ -33,6 +34,8 @@ import {
   CustomersQueryDto,
   ReportQueryDto,
   StaffQueryDto,
+  DriverApplicationsQueryDto,
+  RejectApplicationDto,
   AddNumberDto,
   UpdateStaffDto,
   CreateDriverHubAssignmentDto,
@@ -80,6 +83,47 @@ export class AdminAnalysisController {
   @ApiOperation({ summary: 'Gross sales, profit and distinct order counts per category for a period' })
   categoryWise(@Query() q: DashboardQueryDto) {
     return this.queries.categoryAnalytics(q.filter, q.startDate, q.endDate, q.hubId);
+  }
+}
+
+@ApiTags('Admin · Driver applications')
+@Auth('ADMIN')
+@Controller('driver-applications')
+export class AdminDriverApplicationsController {
+  constructor(private readonly onboarding: DriverOnboardingService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'New drivers\' applications (submitted ones by default), oldest first; optionally one status / hub' })
+  async list(@Query() q: DriverApplicationsQueryDto) {
+    const { items, total } = await this.onboarding.adminList({ status: q.status, hubId: q.hubId, skip: q.skip, take: q.limit });
+    return new Paginated(items, total, q.page, q.limit);
+  }
+
+  @Get(':userId')
+  detail(@Param('userId', ParseUUIDPipe) userId: string) {
+    return this.onboarding.adminDetail(userId);
+  }
+
+  @Get(':userId/documents/:kind')
+  @ApiOperation({ summary: 'An Aadhaar photo or the selfie (served through the API: the storage has no public link)' })
+  async document(@Param('userId', ParseUUIDPipe) userId: string, @Param('kind') kind: string) {
+    if (!['aadhaar_front', 'aadhaar_back', 'selfie'].includes(kind)) throw ApiException.notFound('Document');
+    const { body, contentType } = await this.onboarding.document(userId, kind as DocumentKind);
+    return new StreamableFile(body, { type: contentType, disposition: 'inline' });
+  }
+
+  @Post(':userId/approve')
+  @HttpCode(200)
+  @ResponseMessage('Driver approved.')
+  approve(@Param('userId', ParseUUIDPipe) userId: string, @CurrentUser('id') adminId: string) {
+    return this.onboarding.approve(userId, adminId);
+  }
+
+  @Post(':userId/reject')
+  @HttpCode(200)
+  @ResponseMessage('Application sent back to the driver.')
+  reject(@Param('userId', ParseUUIDPipe) userId: string, @Body() dto: RejectApplicationDto, @CurrentUser('id') adminId: string) {
+    return this.onboarding.reject(userId, adminId, dto.reason);
   }
 }
 
@@ -336,10 +380,11 @@ export class AdminCustomersController {
     private readonly directory: CustomerDirectoryService,
   ) {}
 
-  private async filterOf(q: CustomersQueryDto): Promise<CustomerFilter> {
+  private async filterOf(q: CustomersQueryDto, role?: string): Promise<CustomerFilter> {
     return {
       search: q.search,
       isActive: q.isActive,
+      deleted: q.deleted === true && role === 'SUPERADMIN', // deleted accounts are for the super admin only
       extraWhere: await this.hubs.customerScope(q.hubId),
       createdFrom: q.createdFrom,
       createdTo: q.createdTo,
@@ -351,15 +396,23 @@ export class AdminCustomersController {
 
   @Get()
   @ApiOperation({ summary: 'Customers (search, status, registered dates, address location / pincode, split by date / pincode / city)' })
-  async list(@Query() q: CustomersQueryDto) {
-    const { items, total, groupCounts } = await this.directory.list(await this.filterOf(q), {
+  async list(@Query() q: CustomersQueryDto, @CurrentUser('role') role: string) {
+    const { items, total, groupCounts } = await this.directory.list(await this.filterOf(q, role), {
       skip: q.skip,
       take: q.limit,
       groupBy: q.groupBy,
       sort: q.sort,
     });
     return new Paginated(
-      items.map((u) => ({ ...toUserView(u), orderCount: u._count.orders, city: u.area.city, pincode: u.area.pincode, pincodeSource: u.area.pincodeSource, pushEnabled: !!u.pushToken?.trim() })),
+      items.map((u) => {
+        // a deleted account's phone is del_<epoch ms>: show when it was deleted instead of that placeholder
+        const del = /^del_(\d+)$/.exec(u.phone ?? '');
+        return {
+          ...toUserView(u),
+          ...(del ? { phone: null, deleted: true, deletedAt: new Date(Number(del[1])).toISOString() } : {}),
+          orderCount: u._count.orders, city: u.area.city, pincode: u.area.pincode, pincodeSource: u.area.pincodeSource, pushEnabled: !!u.pushToken?.trim(),
+        };
+      }),
       total,
       q.page,
       q.limit,
@@ -371,8 +424,8 @@ export class AdminCustomersController {
   @ApiOperation({
     summary: 'CSV of the customers matching the same filters as the list (all pages), with delivery area and first-login location',
   })
-  async export(@Query() q: CustomersQueryDto) {
-    const rows = await this.directory.findAll(await this.filterOf(q), q.groupBy, q.sort);
+  async export(@Query() q: CustomersQueryDto, @CurrentUser('role') role: string) {
+    const rows = await this.directory.findAll(await this.filterOf(q, role), q.groupBy, q.sort);
     const ist = (d: Date | null) => (d ? new Date(d.getTime() + 5.5 * 3600_000).toISOString().slice(0, 16).replace('T', ' ') : '');
     const csv = toCsv(
       [

@@ -69,6 +69,7 @@ export class StaffService {
     const existing = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
     if (existing) {
       const have = new Set<Role>([existing.role, ...(existing.additionalRoles ?? [])]);
+      const wasDriver = have.has('DRIVER' as Role); // before the new roles are added
       roles.forEach((r) => have.add(r as Role));
       const additional = [...have].filter((r) => r !== existing.role);
       const data: Prisma.UserUpdateInput = { additionalRoles: additional, isActive: true };
@@ -80,6 +81,8 @@ export class StaffService {
         if (pw) data.password = await bcrypt.hash(pw, 10);
       }
       const user = await this.users.update(existing.id, data);
+      // a number that becomes a Driver for the first time starts onboarding
+      if (roles.includes('DRIVER') && !wasDriver) await this.users.ensureDriverProfile(existing.id);
       return { user: toUserView(user), created: false };
     }
 
@@ -94,6 +97,7 @@ export class StaffService {
       password: pw ? await bcrypt.hash(pw, 10) : null,
       isProfileCompleted: primary !== 'CUSTOMER' ? true : false,
     });
+    if (roles.includes('DRIVER')) await this.users.ensureDriverProfile(user.id); // a new driver starts onboarding
     return { user: toUserView(user), created: true };
   }
 

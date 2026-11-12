@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Order, OrderStatus, Prisma } from '@prisma/client';
 import { ApiException, ErrorCode } from '../../common/api-error';
@@ -8,6 +9,7 @@ import {
   CodOrderPaidOnlineEvent,
   OrderCancelledEvent,
   OrderPaidEvent,
+  OrderPlacedEvent,
   OrdersAssignedEvent,
   OrderStatusChangedEvent,
   OrderSummary,
@@ -18,6 +20,7 @@ import { PrismaService, Tx } from '../../infrastructure/prisma/prisma.service';
 import { DriverHubsService } from '../users/driver-hubs.service';
 import { ORDER_INCLUDE, OrderWithRelations } from './order.presenter';
 import { canTransition } from './order-status';
+import { PAYMENT_RETRY_LIMIT } from './cod-online-payment';
 
 export type RefundOutcome = 'NOT_REQUIRED' | 'REFUNDED' | 'FAILED';
 
@@ -47,6 +50,7 @@ export class OrderLifecycleService {
     private readonly gateway: CashfreeGateway,
     private readonly events: EventEmitter2,
     private readonly driverHubs: DriverHubsService,
+    private readonly config: ConfigService,
   ) {}
 
   // ---------- status transitions ----------
@@ -116,6 +120,11 @@ export class OrderLifecycleService {
   async assignDriver(driverId: string, orderIds: string[], reassign = false) {
     const driver = await this.prisma.user.findFirst({ where: { id: driverId, role: 'DRIVER', isActive: true } });
     if (!driver) throw ApiException.notFound('Driver');
+    // a new driver takes orders only after the admin approved the application (drivers from before onboarding have no profile)
+    const profile = await this.prisma.driverProfile.findUnique({ where: { userId: driverId }, select: { status: true } });
+    if (profile && profile.status !== 'APPROVED') {
+      throw ApiException.badRequest('DRIVER_NOT_APPROVED', 'This driver has not been approved yet, so cannot take orders.');
+    }
 
     const statuses: OrderStatus[] = reassign ? ['CONFIRMED', 'ASSIGNED'] : ['CONFIRMED'];
     const found = await this.prisma.order.findMany({ where: { id: { in: orderIds }, status: { in: statuses } } });
@@ -156,14 +165,83 @@ export class OrderLifecycleService {
 
   /** Idempotent: safe to call from both the app's verify call and the webhook. Returns true on the first confirmation. */
   async markPaid(orderId: string): Promise<boolean> {
-    const res = await this.prisma.order.updateMany({
-      where: { id: orderId, paymentStatus: { not: 'PAID' }, status: { not: 'CANCELLED' } },
-      data: { paymentStatus: 'PAID' },
+    // An order above the COD limit whose payment failed sits in FAILED; once it is paid it becomes a normal PENDING order
+    const revived = await this.prisma.order.updateMany({
+      where: { id: orderId, paymentMethod: 'ONLINE', paymentStatus: { not: 'PAID' }, status: 'FAILED' },
+      data: { paymentStatus: 'PAID', status: 'PENDING', failureReason: null },
     });
+    const res = revived.count
+      ? revived
+      : await this.prisma.order.updateMany({
+          where: { id: orderId, paymentStatus: { not: 'PAID' }, status: { not: 'CANCELLED' } },
+          data: { paymentStatus: 'PAID' },
+        });
     if (res.count === 0) return false;
     const order = await this.load(orderId);
     this.events.emit(DomainEvents.OrderPaid, { order: this.summarize(order) } satisfies OrderPaidEvent);
     return true;
+  }
+
+  /** Orders up to this amount may be Cash on Delivery (also the fallback after a failed online payment). */
+  codLimit(): number {
+    return Number(this.config.get('COD_MAX_AMOUNT') ?? 3000);
+  }
+
+  /**
+   * An online payment did not go through (failed, cancelled or expired). The order is NOT cancelled any more:
+   *  - total up to the COD limit: it carries on as Cash on Delivery, status PENDING, payment "COD - Pending"
+   *    (method COD + payment PENDING); the customer is still asked to retry online up to PAYMENT_RETRY_LIMIT times;
+   *  - above the limit: status FAILED (payment FAILED); the customer can pay online with any option at any time, and
+   *    once it is paid the order moves FAILED -> PENDING (see markPaid).
+   * `countAttempt` is false when the gateway reports an expiry by itself (webhook) rather than the customer failing.
+   */
+  async onlinePaymentFailed(
+    orderId: string,
+    opts: { countAttempt?: boolean; reason?: string } = {},
+  ): Promise<{ outcome: 'COD' | 'FAILED' | 'PAID' | 'NONE'; attempts: number; retriesLeft: number; status: OrderStatus; total: number }> {
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    const total = Number(order.totalAmount);
+    const done = (outcome: 'COD' | 'FAILED' | 'PAID' | 'NONE', o: { paymentAttempts: number; status: OrderStatus }) => ({
+      outcome,
+      attempts: o.paymentAttempts,
+      retriesLeft: Math.max(0, PAYMENT_RETRY_LIMIT - o.paymentAttempts),
+      status: o.status,
+      total,
+    });
+    if (order.paymentStatus === 'PAID') return done('PAID', order);
+    if (order.status === 'CANCELLED' || order.status === 'DELIVERED') return done('NONE', order);
+
+    const attempts = order.paymentAttempts + (opts.countAttempt === false ? 0 : 1);
+    const reason = opts.reason ?? 'Online payment did not go through';
+
+    if (total <= this.codLimit()) {
+      if (order.paymentMethod === 'COD') {
+        // already carrying on as COD (an earlier failure, or a retry of a COD order): only count the attempt
+        const u = await this.prisma.order.update({ where: { id: orderId }, data: { paymentAttempts: attempts } });
+        return done('COD', u);
+      }
+      if (order.paymentMethod === 'ONLINE' && (order.status === 'PENDING' || order.status === 'FAILED')) {
+        const u = await this.prisma.order.update({
+          where: { id: orderId },
+          data: { paymentMethod: 'COD', paymentStatus: 'PENDING', status: 'PENDING', paymentAttempts: attempts, failureReason: null },
+        });
+        // it is a live COD order now: tell the admins (online orders announce themselves only once paid)
+        const full = await this.load(orderId);
+        this.events.emit(DomainEvents.OrderPlaced, { order: this.summarize(full), paymentMethod: 'COD' } satisfies OrderPlacedEvent);
+        return done('COD', u);
+      }
+      return done('NONE', order);
+    }
+
+    // above the COD limit
+    if (order.paymentMethod === 'ONLINE' && (order.status === 'PENDING' || order.status === 'FAILED')) {
+      const u = await this.prisma.order.update({
+        where: { id: orderId },
+        data: { status: 'FAILED', paymentStatus: 'FAILED', paymentAttempts: attempts, failureReason: reason },
+      });
+      return done('FAILED', u);
+    }
+    return done('NONE', order);
   }
 
   /**

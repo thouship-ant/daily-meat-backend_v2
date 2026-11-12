@@ -44,7 +44,7 @@ chmod 600 .env
 | `S3_BUCKET`, `S3_PUBLIC_BASE_URL`, `AWS_REGION`, `AWS_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Product / category / banner images (any S3-compatible store, e.g. Supabase Storage) |
 | `EXPO_ACCESS_TOKEN`, `ANDROID_*`, `PUSH_TOKEN_MAX_CHARS` | Push notifications |
 | `APP_ANDROID_*`, `APP_IOS_*` | "Update available" prompt |
-| `COD_MAX_AMOUNT`, `OTP_*`, `MAX_ACCOUNTS_PER_DEVICE` | Business rules (defaults 2000 / 600 s / 5 / 2) |
+| `COD_MAX_AMOUNT`, `OTP_*`, `MAX_ACCOUNTS_PER_DEVICE` | Business rules (defaults 3000 / 600 s / 5 / 2) |
 | `TEST_ACCOUNT_PHONE_MARKER`, `TEST_ACCOUNT_OTP` | Store-reviewer account with a fixed OTP. **Leave `TEST_ACCOUNT_PHONE_MARKER` empty** unless you need it, or anyone knowing the OTP can sign in as that account |
 | `CORS_ORIGINS` | Only needed for browser clients (admin web panel). Comma separated; empty allows any origin |
 | `SWAGGER_ENABLED` | Defaults to `false` in the production compose file. Set `true` to expose `/docs/*` |

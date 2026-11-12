@@ -93,6 +93,18 @@ export class CustomerPaymentsController {
     return this.payments.startCodOnlinePayment(userId, id);
   }
 
+  @Post('orders/:id/payment-failed')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'The payment sheet failed or was closed without paying',
+    description:
+      'Does NOT cancel the order. Up to the COD limit it carries on as Cash on Delivery (outcome COD, payment "COD - Pending"); ' +
+      'above it the order is FAILED until paid online (outcome FAILED). `retriesLeft` counts the online retries still offered (3 in total).',
+  })
+  paymentFailed(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.payments.reportFailedForCustomer(userId, id);
+  }
+
   @Post('verify')
   @HttpCode(200)
   @ApiOperation({

@@ -3,6 +3,7 @@ import { StaffService } from './staff.service';
 function make(existing: any = null, target: any = existing, hubs: { id: number }[] = [{ id: 1 }]) {
   const created: any[] = [];
   const updated: any[] = [];
+  const profiles: string[] = [];
   const prisma: any = {
     hub: {
       findUnique: async ({ where }: any) => hubs.find((h) => h.id === where.id) ?? null,
@@ -16,9 +17,10 @@ function make(existing: any = null, target: any = existing, hubs: { id: number }
     create: async (data: any) => { created.push(data); return { id: 'new', createdAt: new Date(), ...data }; },
     update: async (id: string, data: any) => { updated.push({ id, data }); return { ...(existing ?? {}), id, ...data }; },
     getById: async () => target,
+    ensureDriverProfile: async (id: string) => { profiles.push(id); },
   };
   const config: any = { get: () => undefined };
-  return { svc: new StaffService(prisma, users, config), created, updated };
+  return { svc: new StaffService(prisma, users, config), created, updated, profiles };
 }
 
 describe('StaffService', () => {
@@ -106,5 +108,19 @@ describe('StaffService', () => {
     await expect(a.svc.updateProfile('a', { hubId: 99 })).rejects.toThrow();
     const sa = make({ id: 's', phone: '+919000000025', role: 'SUPERADMIN' });
     await expect(sa.svc.updateProfile('s', { hubId: 1 })).rejects.toThrow(/Admin or a Driver/);
+  });
+
+  it('a number that becomes a Driver for the first time starts onboarding; one that is already a Driver does not', async () => {
+    const fresh = make();
+    await fresh.svc.addNumber({ phone: '+919000000030', roles: ['DRIVER'] });
+    expect(fresh.profiles).toEqual(['new']);
+
+    const customer = make({ id: 'c1', phone: '+919000000031', role: 'CUSTOMER', additionalRoles: [], password: null });
+    await customer.svc.addNumber({ phone: '+919000000031', roles: ['DRIVER'] });
+    expect(customer.profiles).toEqual(['c1']);
+
+    const already = make({ id: 'd1', phone: '+919000000032', role: 'DRIVER', additionalRoles: [], password: 'x' });
+    await already.svc.addNumber({ phone: '+919000000032', roles: ['DRIVER'] });
+    expect(already.profiles).toEqual([]);
   });
 });

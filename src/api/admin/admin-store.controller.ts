@@ -146,7 +146,7 @@ export class AdminTicketsController {
   async list(@Query() q: TicketsQueryDto) {
     // a hub's tickets: about one of its orders, or from one of its customers
     const customers = await this.hubs.customerScope(q.hubId);
-    const scope = q.hubId == null ? undefined : { OR: [{ order: { hubId: q.hubId } }, { user: customers }] };
+    const scope = q.hubId == null ? undefined : { OR: [{ hubId: q.hubId }, { order: { hubId: q.hubId } }, { user: customers }] };
     const { items, total } = await this.support.adminList({ status: q.status, skip: q.skip, take: q.limit, scope });
     return new Paginated(items, total, q.page, q.limit);
   }

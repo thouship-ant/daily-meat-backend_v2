@@ -5,6 +5,7 @@ import { Response } from 'express';
 import { Public } from '../../common/decorators';
 import { ContactMessageDto } from './shared.dto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { CacheService } from '../../infrastructure/cache/cache.service';
 
 /** Unauthenticated endpoints shared by all apps. */
 @ApiTags('Public')
@@ -14,17 +15,20 @@ export class PublicController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly cache: CacheService,
   ) {}
 
   @Get('health')
-  @ApiOperation({ summary: 'Liveness + database check' })
+  @ApiOperation({ summary: 'Liveness + database + cache (Redis or in-memory) check' })
   async health(@Res({ passthrough: true }) res: Response) {
+    // `cache.backend` says whether Redis is really in use ("memory" in production means REDIS_URL is not reaching the API)
+    const cache = await this.cache.health();
     try {
       await this.prisma.$queryRaw`SELECT 1`;
-      return { status: 'ok', uptime: Math.round(process.uptime()), database: 'up' };
+      return { status: 'ok', uptime: Math.round(process.uptime()), database: 'up', cache };
     } catch {
       res.status(HttpStatus.SERVICE_UNAVAILABLE);
-      return { status: 'degraded', uptime: Math.round(process.uptime()), database: 'down' };
+      return { status: 'degraded', uptime: Math.round(process.uptime()), database: 'down', cache };
     }
   }
 

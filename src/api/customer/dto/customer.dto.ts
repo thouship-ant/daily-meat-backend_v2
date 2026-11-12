@@ -52,6 +52,13 @@ export class MultiRoleSelectDto {
   @ApiProperty({ enum: ['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER'] }) @IsIn(['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER']) role: 'SUPERADMIN' | 'ADMIN' | 'DRIVER' | 'CUSTOMER';
 }
 
+export class DeleteAccountDto {
+  @ApiPropertyOptional({ enum: ['NOT_USING', 'DELIVERY', 'QUALITY', 'PRICE', 'PRIVACY', 'ANOTHER_APP', 'OTHER'] })
+  @IsOptional() @IsIn(['NOT_USING', 'DELIVERY', 'QUALITY', 'PRICE', 'PRIVACY', 'ANOTHER_APP', 'OTHER']) reasonCode?: string;
+  @ApiPropertyOptional({ description: 'Free text: required by the app for "Other", optional otherwise' })
+  @IsOptional() @IsString() @MaxLength(500) reason?: string;
+}
+
 export class SlowReportDto {
   @ApiProperty({ enum: ['app_frozen', 'no_server_answer'] }) @IsIn(['app_frozen', 'no_server_answer']) reason: 'app_frozen' | 'no_server_answer';
   @ApiProperty({ description: 'How long the phone was hanging, in seconds' }) @Type(() => Number) @IsNumber() @Min(0) @Max(86400) seconds: number;

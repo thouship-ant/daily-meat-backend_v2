@@ -4,6 +4,7 @@ import { CashfreeGateway } from '../../infrastructure/payments/cashfree.gateway'
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { onlinePayState } from '../orders/cod-online-payment';
 import { OrderLifecycleService } from '../orders/order-lifecycle.service';
+import { DriverOnboardingService } from '../driver-onboarding/driver-onboarding.service';
 
 export type PaymentVerification = {
   orderId: string;
@@ -21,6 +22,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly gateway: CashfreeGateway,
     private readonly lifecycle: OrderLifecycleService,
+    private readonly onboarding: DriverOnboardingService,
   ) {}
 
   /** The app calls this after the payment sheet closes. The gateway - not the app - decides whether it was paid. */
@@ -28,7 +30,7 @@ export class PaymentsService {
     const order = await this.prisma.order.findFirst({ where: { id: orderId, userId } });
     if (!order) throw ApiException.notFound('Order');
     // a COD order can be paid online too (see startCodOnlinePayment); it keeps method COD until the money arrives
-    if (order.paymentMethod !== 'ONLINE' && !(order.paymentMethod === 'COD' && order.gatewayOrderId)) {
+    if (order.paymentMethod !== 'ONLINE' && !(order.paymentMethod === 'COD' && (order.gatewayOrderId || order.cfOrderId))) {
       throw ApiException.badRequest(ErrorCode.VALIDATION_FAILED, 'This order is not an online payment order.');
     }
     if (order.paymentStatus === 'PAID') return { orderId, paymentStatus: 'PAID', alreadyPaid: true };
@@ -45,8 +47,10 @@ export class PaymentsService {
     if (order.paymentStatus === 'PAID') {
       throw ApiException.badRequest(ErrorCode.VALIDATION_FAILED, 'This order is already paid.');
     }
-    if (order.paymentMethod !== 'COD') {
-      throw ApiException.badRequest(ErrorCode.VALIDATION_FAILED, 'Only Cash on Delivery orders can be paid this way.');
+    // a COD order (up to the COD limit), or an order above the limit whose online payment failed (status FAILED)
+    const failedOnline = order.paymentMethod === 'ONLINE' && order.status === 'FAILED';
+    if (order.paymentMethod !== 'COD' && !failedOnline) {
+      throw ApiException.badRequest(ErrorCode.VALIDATION_FAILED, 'Only Cash on Delivery orders or orders with a failed online payment can be paid this way.');
     }
     if (!onlinePayState(order).available) {
       throw ApiException.badRequest(
@@ -60,7 +64,8 @@ export class PaymentsService {
     if (order.cfOrderId && order.paymentSessionId) {
       const status = await this.gateway.getOrderStatus(gatewayId).catch(() => 'UNKNOWN');
       if (status === 'PAID') {
-        await this.lifecycle.markCodPaidOnline(order.id, gatewayId);
+        if (failedOnline) await this.lifecycle.markPaid(order.id);
+        else await this.lifecycle.markCodPaidOnline(order.id, gatewayId);
         return { orderId: order.id, paymentStatus: 'PAID' as const };
       }
       if (status === 'ACTIVE') return this.session(order.id, order.paymentSessionId, order.cfOrderId, Number(order.totalAmount));
@@ -77,6 +82,23 @@ export class PaymentsService {
       data: { gatewayOrderId: gatewayId, cfOrderId: gw.cfOrderId, paymentSessionId: gw.paymentSessionId },
     });
     return this.session(order.id, gw.paymentSessionId, gw.cfOrderId, Number(order.totalAmount));
+  }
+
+  /**
+   * The app says the payment sheet failed or was closed without paying. The gateway is asked first (the customer may
+   * have paid after all); otherwise the failure rule runs (see OrderLifecycleService.onlinePaymentFailed) and the
+   * answer tells the app what to show: carry on as COD (with retries left) or pay again because the order is FAILED.
+   */
+  async reportFailedForCustomer(userId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, userId } });
+    if (!order) throw ApiException.notFound('Order');
+    if (order.paymentStatus !== 'PAID') {
+      const real = await this.reconcile(orderId).catch(() => null);
+      if (real?.paymentStatus === 'PAID') {
+        return { outcome: 'PAID' as const, attempts: order.paymentAttempts, retriesLeft: 0, status: 'PENDING', total: Number(order.totalAmount) };
+      }
+    }
+    return this.lifecycle.onlinePaymentFailed(orderId, { reason: 'Online payment did not go through' });
   }
 
   private session(orderId: string, sessionId: string, cfOrderId: string, amount: number) {
@@ -97,6 +119,12 @@ export class PaymentsService {
     const orderId: string | undefined = payload?.data?.order?.order_id;
     if (!orderId) return; // e.g. the dashboard's webhook "test" ping
 
+    // a new driver's starting deposit (not an order)
+    if (this.onboarding.isDepositGatewayId(orderId)) {
+      await this.onboarding.reconcileDeposit(orderId).catch((e) => this.logger.warn(`deposit webhook ${orderId}: ${(e as Error).message}`));
+      return;
+    }
+
     // the gateway may know the order by a suffixed id (a retried COD payment)
     const known = await this.prisma.order.findFirst({
       where: { OR: [{ id: orderId }, { gatewayOrderId: orderId }] },
@@ -114,12 +142,13 @@ export class PaymentsService {
     const isCod = order.paymentMethod === 'COD';
     if (status === 'PAID') {
       if (isCod) await this.lifecycle.markCodPaidOnline(orderId, gatewayId);
-      else await this.lifecycle.markPaid(orderId);
+      else await this.lifecycle.markPaid(orderId); // also lifts a FAILED (payment failed) order to PENDING
       return { orderId, paymentStatus: 'PAID' };
     }
     if (DEAD_ORDER_STATES.includes(status)) {
-      // A COD order stays a live COD order when its online payment fails; only a pure online order is cancelled.
-      if (!isCod) await this.lifecycle.abandonUnpaid(orderId, 'Payment expired or was cancelled');
+      // The order is not cancelled: up to the COD limit it carries on as COD ("COD - Pending"), above it it is FAILED
+      // until the customer pays online. The webhook does not count as one of the customer's retries.
+      await this.lifecycle.onlinePaymentFailed(orderId, { countAttempt: false, reason: 'Payment expired or was cancelled' });
       return { orderId, paymentStatus: 'FAILED' };
     }
     return { orderId, paymentStatus: 'PENDING' }; // still ACTIVE: the customer may retry

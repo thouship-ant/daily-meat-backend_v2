@@ -52,6 +52,10 @@ export class MultiRoleSelectDto {
   @ApiProperty({ enum: ['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER'] }) @IsIn(['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER']) role: 'SUPERADMIN' | 'ADMIN' | 'DRIVER' | 'CUSTOMER';
 }
 
+export class SwitchRoleDto {
+  @ApiProperty({ enum: ['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER'] }) @IsIn(['SUPERADMIN', 'ADMIN', 'DRIVER', 'CUSTOMER']) role: 'SUPERADMIN' | 'ADMIN' | 'DRIVER' | 'CUSTOMER';
+}
+
 export class SlotsQueryDto {
   @ApiPropertyOptional({ example: '2026-11-13', description: 'Delivery day: adds how many places are left per slot' })
   @IsOptional()

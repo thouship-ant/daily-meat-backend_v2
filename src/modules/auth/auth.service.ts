@@ -197,6 +197,16 @@ export class AuthService {
     return { user: toUserView(user, role), tokens: await this.issueTokens(user, role) };
   }
 
+  /** Signed in already: move this session to another role of the same account, without signing out. */
+  async switchRole(userId: string, role: Role): Promise<AuthResult> {
+    const user = await this.users.findById(userId);
+    if (!user || !user.isActive) throw ApiException.unauthorized('Invalid or expired sign-in.', ErrorCode.INVALID_CREDENTIALS);
+    if (!rolesOf(user).includes(role)) {
+      throw ApiException.badRequest(ErrorCode.INVALID_CREDENTIALS, 'This account does not have that role.');
+    }
+    return { user: toUserView(user, role), tokens: await this.issueTokens(user, role) };
+  }
+
   // ---------- tokens ----------
 
   async refresh(refreshToken: string): Promise<AuthTokens> {

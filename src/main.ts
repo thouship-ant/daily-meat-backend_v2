@@ -21,6 +21,18 @@ async function bootstrap() {
   app.use(requestId);
   app.use(helmet());
   app.use(compression());
+  // Find slow endpoints: every response carries Server-Timing, and anything over 800 ms is logged
+  app.use((req: any, res: any, next: () => void) => {
+    const start = process.hrtime.bigint();
+    const original = res.writeHead;
+    res.writeHead = function (...args: any[]) {
+      const ms = Number(process.hrtime.bigint() - start) / 1e6;
+      if (!res.headersSent) res.setHeader('Server-Timing', `app;dur=${ms.toFixed(1)}`);
+      if (ms > 800) logger.warn(`Slow request ${req.method} ${req.originalUrl} took ${ms.toFixed(0)} ms`);
+      return original.apply(this, args);
+    };
+    next();
+  });
   app.getHttpAdapter().getInstance().set('trust proxy', 1); // behind a reverse proxy / load balancer: real client IPs for rate limiting
 
   const origins = (config.get<string>('CORS_ORIGINS') ?? '').split(',').map((o) => o.trim()).filter(Boolean);

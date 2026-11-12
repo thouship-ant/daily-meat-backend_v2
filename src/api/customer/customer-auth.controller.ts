@@ -5,7 +5,7 @@ import { Message } from '../../common/api-response';
 import { Auth, CurrentUser, Public, ResponseMessage } from '../../common/decorators';
 import { AuthService } from '../../modules/auth/auth.service';
 import { LogoutDto, RefreshTokenDto } from '../shared/shared.dto';
-import { IdentifierDto, MultiRoleOtpDto, MultiRoleResendDto, MultiRoleSelectDto, MultiRoleStartDto, SendOtpDto, VerifyOtpDto } from './dto/customer.dto';
+import { IdentifierDto, MultiRoleOtpDto, MultiRoleResendDto, MultiRoleSelectDto, MultiRoleStartDto, SendOtpDto, SwitchRoleDto, VerifyOtpDto } from './dto/customer.dto';
 
 @ApiTags('Customer · Auth')
 @Controller('auth')
@@ -78,6 +78,15 @@ export class CustomerAuthController {
   @ApiOperation({ summary: 'Step 3: sign in as the chosen role' })
   multiRoleSelect(@Body() dto: MultiRoleSelectDto) {
     return this.auth.multiRoleSelect(dto.selectionToken, dto.role);
+  }
+
+  @Auth()
+  @Post('switch-role')
+  @HttpCode(200)
+  @ResponseMessage('Role switched.')
+  @ApiOperation({ summary: 'Signed in with several roles: switch this session to another role (new tokens, no sign-out)' })
+  switchRole(@CurrentUser('id') userId: string, @Body() dto: SwitchRoleDto) {
+    return this.auth.switchRole(userId, dto.role);
   }
 
   @Public()

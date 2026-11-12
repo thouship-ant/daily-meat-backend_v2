@@ -1,5 +1,8 @@
 -- Staff accounts for the current team (run by hand, see DEPLOY.md). Idempotent: promotes the numbers that already
 -- exist as users and creates the ones that do not. Run it AFTER `data.sql` was imported (the import needs empty tables).
+-- WARNING: once prisma/sql/swap-driver-admin-numbers.sql has been run on a database, do NOT run this file there
+-- again: it would set +918825997939 / +919344297939 back to their old roles and passwords (use it on a fresh
+-- database first, then run the swap script).
 -- It sets the password of every account below to DAS@3781 and ends their sessions; run it again only when you want that.
 --
 --   $C exec -T db psql -U daily_meat -d daily_meat -v ON_ERROR_STOP=1 --single-transaction < prisma/sql/staff-accounts.sql

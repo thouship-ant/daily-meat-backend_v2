@@ -97,8 +97,14 @@ export class SendOtpDto extends IdentifierDto {
   deviceId?: string;
 }
 
+export class SimCheckDto {
+  @ApiProperty({ type: [String], description: 'The mobile numbers read from the SIM cards' }) @IsArray() @ArrayMinSize(1) @ArrayMaxSize(4) @IsString({ each: true }) @MaxLength(20, { each: true }) numbers: string[];
+}
+
 export class VerifyOtpDto extends IdentifierDto {
   @ApiProperty({ example: '123456' }) @IsString() @Length(4, 8) otp: string;
+  @ApiPropertyOptional({ type: [String], description: 'SIM numbers of this phone: lets a second instance of the app tell which number is already signed in' })
+  @IsOptional() @IsArray() @ArrayMaxSize(4) @IsString({ each: true }) @MaxLength(20, { each: true }) simNumbers?: string[];
   @ApiPropertyOptional({ description: 'Stable device id, used to limit accounts per device' })
   @IsOptional()
   @IsString()

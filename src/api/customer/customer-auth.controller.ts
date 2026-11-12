@@ -6,7 +6,7 @@ import { Auth, CurrentUser, Public, ResponseMessage } from '../../common/decorat
 import { AuthService } from '../../modules/auth/auth.service';
 import { NotificationsService } from '../../modules/notifications/notifications.service';
 import { LogoutDto, RefreshTokenDto } from '../shared/shared.dto';
-import { IdentifierDto, MultiRoleOtpDto, MultiRoleResendDto, MultiRoleSelectDto, MultiRoleStartDto, SendOtpDto, SlowReportDto, SwitchRoleDto, VerifyOtpDto } from './dto/customer.dto';
+import { IdentifierDto, MultiRoleOtpDto, MultiRoleResendDto, MultiRoleSelectDto, MultiRoleStartDto, SendOtpDto, SimCheckDto, SlowReportDto, SwitchRoleDto, VerifyOtpDto } from './dto/customer.dto';
 
 @ApiTags('Customer · Auth')
 @Controller('auth')
@@ -19,6 +19,15 @@ export class CustomerAuthController {
   @ApiOperation({ summary: 'Does this phone/email have an account, and which login method applies?' })
   lookup(@Body() dto: IdentifierDto) {
     return this.auth.lookup(dto.identifier);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('sim-check')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Login screen with 2+ SIM numbers: which have an account, and which is already signed in on this phone (dual / cloned app)' })
+  simCheck(@Body() dto: SimCheckDto) {
+    return this.auth.simCheck(dto.numbers);
   }
 
   @Public()
@@ -38,7 +47,7 @@ export class CustomerAuthController {
   @ResponseMessage('Signed in.')
   @ApiOperation({ summary: 'Verify the OTP. Creates the account on first sign-in and returns tokens.' })
   verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.auth.verifyCustomerOtp(dto.identifier, dto.otp, dto.deviceId);
+    return this.auth.verifyCustomerOtp(dto.identifier, dto.otp, dto.deviceId, dto.simNumbers);
   }
 
   // ---- a number with several roles: password -> OTP -> choose the role ----

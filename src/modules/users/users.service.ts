@@ -80,6 +80,13 @@ export class UsersService {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
 
+  findByPhones(phones: string[]) {
+    return this.prisma.user.findMany({
+      where: { phone: { in: phones } },
+      select: { id: true, phone: true, role: true, additionalRoles: true, isActive: true, refreshToken: true, simGroup: true, lastActiveAt: true, lastLoginAt: true },
+    });
+  }
+
   countByDevice(deviceId: string) {
     return this.prisma.user.count({ where: { deviceId } });
   }

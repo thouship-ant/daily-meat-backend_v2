@@ -9,6 +9,7 @@ import { ApiException, ErrorCode } from '../../common/api-error';
 import { DomainEvents } from '../../common/events/domain-events';
 import { UsersService } from '../users/users.service';
 import { rolesOf, toUserView, UserView } from '../users/user.mapper';
+import { normalizeSimNumber, simGroupOf } from './sim-group';
 import { OtpService } from './otp.service';
 
 export interface AuthTokens {
@@ -64,7 +65,7 @@ export class AuthService {
     await this.otp.send(identifier);
   }
 
-  async verifyCustomerOtp(identifier: string, code: string, deviceId?: string): Promise<AuthResult> {
+  async verifyCustomerOtp(identifier: string, code: string, deviceId?: string, simNumbers?: string[]): Promise<AuthResult> {
     let user = await this.users.findByIdentifier(identifier);
     if (user && !rolesOf(user).includes('CUSTOMER')) {
       throw ApiException.badRequest(ErrorCode.INVALID_CREDENTIALS, 'This account signs in with a password.');
@@ -96,7 +97,34 @@ export class AuthService {
 
     if (!user.isActive) throw ApiException.forbidden('Account deactivated. Please contact support.');
     this.users.recordLogin(user.id);
+    // remember which phone (by its SIM numbers) this account is signed in on, for the dual-app check (see simCheck)
+    const simGroup = simGroupOf(simNumbers);
+    if (simGroup && user.simGroup !== simGroup) user = await this.users.update(user.id, { simGroup });
     return { user: toUserView(user, 'CUSTOMER'), tokens: await this.issueTokens(user, 'CUSTOMER'), isNewUser };
+  }
+
+  /** An account counts as "signed in on this phone" for this long after it was last used. */
+  static readonly SIM_ACTIVE_DAYS = 14;
+
+  /**
+   * The login screen read two (or more) SIM numbers. For each: does it have an account, and is it already signed in on
+   * THIS phone (another instance of the app - dual / cloned app)? "This phone" = the stored SIM group matches the one
+   * of the numbers sent, and the account still has a session (logout clears it) that was used recently.
+   */
+  async simCheck(numbers: string[]) {
+    const list = Array.from(new Set((numbers ?? []).map(normalizeSimNumber).filter((n): n is string => !!n))).slice(0, 4);
+    const group = simGroupOf(list);
+    const users = list.length ? await this.users.findByPhones(list) : [];
+    const since = Date.now() - AuthService.SIM_ACTIVE_DAYS * 86_400_000;
+    return list.map((phone) => {
+      const u = users.find((x) => x.phone === phone);
+      const lastUsed = u ? Math.max(u.lastActiveAt?.getTime() ?? 0, u.lastLoginAt?.getTime() ?? 0) : 0;
+      return {
+        phone,
+        exists: !!u && rolesOf(u as any).includes('CUSTOMER'),
+        loggedInHere: !!(group && u && u.isActive && u.simGroup === group && u.refreshToken && lastUsed >= since),
+      };
+    });
   }
 
   // ---------- staff (admin / driver): password ----------

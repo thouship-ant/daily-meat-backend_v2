@@ -132,6 +132,9 @@ model User {
   lastLoginAt              DateTime? @map("last_login_at") @db.Timestamptz(6)
   lastActiveAt             DateTime? @map("last_active_at") @db.Timestamptz(6)
   deviceId                 String?   @map("device_id")
+  /// Hash of the SIM numbers of the phone this account last signed in on (never the numbers themselves). Lets a second
+  /// instance of the app on the same phone (dual / cloned app) tell which of the two SIM numbers is already signed in.
+  simGroup                 String?   @map("sim_group") @db.VarChar(64)
   promotionalNotifications Boolean   @default(true) @map("promotional_notifications")
   // Legacy v1 columns. v2 keeps OTPs (hashed) in the cache layer instead; the columns stay for compatibility.
   otp                      String?   @db.VarChar(6)

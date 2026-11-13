@@ -573,6 +573,27 @@ model ScheduledNotification {
   @@map("scheduled_notifications")
 }
 
+/// One row per "come back to Daily Meat" reminder SMS attempt (Sunday 8 AM job): when it went out, whether the gateway
+/// accepted it, and when this customer is next due (today + ceil(eligible customers / per-run size) weeks).
+model ReminderSmsLog {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  phone          String    @db.VarChar(20)
+  /// SENT | FAILED
+  status         String    @db.VarChar(10)
+  templateId     String    @map("template_id") @db.VarChar(30)
+  sentAt         DateTime  @default(now()) @map("sent_at") @db.Timestamptz(6)
+  /// customers eligible for the SMS on the day it was sent, and the weeks one full round takes
+  eligibleCount  Int       @map("eligible_count")
+  cycleWeeks     Int       @map("cycle_weeks")
+  /// IST date this customer is due again (SENT rows only)
+  nextReminderOn DateTime? @map("next_reminder_on") @db.Date
+
+  @@index([userId, sentAt], map: "reminder_sms_logs_user_sent_idx")
+  @@index([sentAt], map: "reminder_sms_logs_sent_at_idx")
+  @@map("reminder_sms_logs")
+}
+
 model PromoNotificationLog {
   id         String   @id @default(uuid()) @db.Uuid
   userId     String   @map("user_id") @db.Uuid

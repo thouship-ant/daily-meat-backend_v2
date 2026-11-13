@@ -51,6 +51,36 @@ export class MessagingService {
     }
   }
 
+  /**
+   * A non-OTP DLT SMS (the text must match the approved template exactly). Never throws: returns true only when the
+   * gateway accepted it, so a bulk job can carry on and only log the numbers that really went out.
+   */
+  async sendTemplateSms(phone: string, templateId: string, message: string): Promise<boolean> {
+    const apiKey = this.config.get<string>('SMS_FORTIUS_API_KEY');
+    const senderId = this.config.get<string>('SMS_FORTIUS_SENDER_ID');
+    const baseUrl = this.config.get<string>('SMS_FORTIUS_BASE_URL');
+    if (!apiKey || !senderId || !baseUrl || !templateId) {
+      if (this.config.get('NODE_ENV') !== 'production') this.logger.warn(`[SMS mock] ${phone} -> ${message}`);
+      else this.logger.error('SMS gateway is not configured; the SMS was not sent.');
+      return false;
+    }
+    const params = new URLSearchParams({
+      apikey: apiKey,
+      senderid: senderId,
+      templateid: templateId,
+      number: phone.replace(/^\+91/, ''),
+      message,
+    });
+    try {
+      const res = await fetch(`${baseUrl}?${params.toString()}`, { method: 'GET', signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) throw new Error(`SMS gateway responded ${res.status}`);
+      return true;
+    } catch (e) {
+      this.logger.error(`SMS to ${phone.slice(0, -4)}**** failed: ${(e as Error).message}`);
+      return false;
+    }
+  }
+
   private async sendOtpEmail(to: string, otp: string, ttlMinutes: number): Promise<void> {
     const host = this.config.get<string>('SMTP_HOST');
     if (!host) {

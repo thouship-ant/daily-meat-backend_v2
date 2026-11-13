@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { HubsModule } from '../hubs/hubs.module';
 import { TrackingModule } from '../tracking/tracking.module';
 import { UsersModule } from '../users/users.module';
+import { AppReminderSmsService } from './app-reminder-sms.service';
 import { MarketingService } from './marketing.service';
 import { NotificationsService } from './notifications.service';
 import { OrderNotificationsListener } from './order-notifications.listener';
@@ -22,7 +23,7 @@ import { RealtimeGateway } from './realtime.gateway';
       useFactory: (c: ConfigService) => ({ secret: c.getOrThrow<string>('JWT_SECRET') }),
     }),
   ],
-  providers: [PushService, RealtimeGateway, NotificationsService, OrderNotificationsListener, MarketingService, PromoRemindersService],
+  providers: [PushService, RealtimeGateway, NotificationsService, OrderNotificationsListener, MarketingService, PromoRemindersService, AppReminderSmsService],
   exports: [NotificationsService, MarketingService, PromoRemindersService],
 })
 export class NotificationsModule {}

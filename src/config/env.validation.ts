@@ -39,6 +39,13 @@ export const envValidationSchema = Joi.object({
   SMS_FORTIUS_SENDER_ID: Joi.string().allow('').default(''),
   SMS_FORTIUS_TEMPLATE_ID: Joi.string().allow('').default(''),
   SMS_FORTIUS_BASE_URL: Joi.string().allow('').default(''),
+  // "Come back to Daily Meat" SMS (Sundays 8 AM IST) to active customers who no longer have the app: DLT template id,
+  // on/off, days without opening the app, and how many customers get the SMS each Sunday (a full round of all eligible
+  // customers then takes ceil(eligible / this) weeks).
+  SMS_FORTIUS_APP_REMINDER_TEMPLATE_ID: Joi.string().allow('').default('1777179455851148185'),
+  APP_REMINDER_SMS_ENABLED: Joi.boolean().truthy('true').falsy('false').empty('').default(true),
+  APP_REMINDER_SMS_INACTIVE_DAYS: Joi.number().integer().min(1).empty('').default(7),
+  APP_REMINDER_SMS_PER_RUN: Joi.number().integer().min(1).empty('').default(50),
 
   // Push
   EXPO_ACCESS_TOKEN: Joi.string().allow('').default(''),

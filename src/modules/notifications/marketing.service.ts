@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ScheduledNotification } from '@prisma/client';
 import { ApiException } from '../../common/api-error';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -54,7 +55,16 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     private readonly push: PushService,
     private readonly users: UsersService,
     private readonly hubs: HubsService,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * MARKETING_PUSH_ENABLED=false turns the general marketing push off: the admin "Marketing Broadcast" to customers
+   * and the scheduled plans. On unless set to false. (Order / driver alerts and admin previews are not affected.)
+   */
+  get enabled(): boolean {
+    return String(this.config.get('MARKETING_PUSH_ENABLED') ?? 'true').trim().toLowerCase() !== 'false';
+  }
 
   // The plans are sent by a once-a-minute check. It is on in production, and elsewhere only when
   // SCHEDULED_NOTIFICATIONS_ENABLED=true, so a development copy of real data never pushes to real phones.
@@ -98,6 +108,11 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
 
   /** Counts the audience, answers straight away and sends in the background (many Expo requests). */
   async broadcast(input: { target?: string; inactiveDays?: number; title: string; body: string; hubId?: number }) {
+    // The flag is checked first: nothing is counted or sent while marketing push is off
+    if (!this.enabled) {
+      this.logger.warn(`Broadcast "${input.title}" not sent: MARKETING_PUSH_ENABLED=false.`);
+      return { message: 'Marketing push notifications are turned off, so nothing was sent.', enabled: false, devices: 0, customers: 0 };
+    }
     const target = input.target === 'INACTIVE' ? 'INACTIVE' : 'ALL';
     const { tokens, customers } = await this.audienceTokens(target, input.inactiveDays, input.hubId);
     if (!tokens.length) {
@@ -193,6 +208,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
   // ---------- the minute check ----------
 
   async runDuePlans(now = new Date()) {
+    if (!this.enabled) return; // marketing push is off: no plan goes out (nothing is marked as sent either)
     const ist = new Date(now.getTime() + IST_MS);
     const today = ist.toISOString().slice(0, 10);
     const minuteNow = ist.getUTCHours() * 60 + ist.getUTCMinutes();

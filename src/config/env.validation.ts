@@ -56,6 +56,8 @@ export const envValidationSchema = Joi.object({
   // Aadhaar / selfie photos: a PRIVATE bucket (never given a public URL). Empty = the S3_BUCKET above (keys under kyc/).
   S3_KYC_BUCKET: Joi.string().allow('').default(''),
   // New driver starting deposit (T-shirt + basket): list price (struck out) and the offer price actually charged
+  // General marketing push (the admin "Marketing Broadcast" to customers and the scheduled plans). false = nothing is sent. Default true.
+  MARKETING_PUSH_ENABLED: Joi.boolean().truthy('true').falsy('false').default(true),
   DRIVER_DEPOSIT_LIST_PRICE: Joi.number().empty('').default(2000),
   DRIVER_DEPOSIT_PRICE: Joi.number().empty('').default(1500),
   // DigiLocker (Aadhaar e-KYC). Empty = off: drivers upload the Aadhaar photos and an admin checks them

@@ -43,6 +43,20 @@ export class PushService {
     return messages.length;
   }
 
+  /** A different message per customer (reminders that name a product / price): one push per valid device token. */
+  async sendEach(items: { tokens: string[]; title: string; body: string; data?: Record<string, unknown> }[]): Promise<number> {
+    const options = this.alertOptions();
+    const messages: ExpoPushMessage[] = [];
+    for (const item of items) {
+      for (const to of new Set(item.tokens)) {
+        if (!Expo.isExpoPushToken(to)) continue;
+        messages.push({ to, ...options, title: item.title, body: item.body, data: item.data ?? {} });
+      }
+    }
+    if (messages.length) await this.dispatch(messages);
+    return messages.length;
+  }
+
   private alertOptions(kind?: string): Partial<ExpoPushMessage> {
     if (kind && ALARM_EVENTS.has(kind)) {
       return {

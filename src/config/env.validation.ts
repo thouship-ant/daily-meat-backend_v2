@@ -58,6 +58,13 @@ export const envValidationSchema = Joi.object({
   // New driver starting deposit (T-shirt + basket): list price (struck out) and the offer price actually charged
   // General marketing push (the admin "Marketing Broadcast" to customers and the scheduled plans). false = nothing is sent. Default true.
   MARKETING_PUSH_ENABLED: Joi.boolean().truthy('true').falsy('false').default(true),
+  // Automatic customer reminders (also need MARKETING_PUSH_ENABLED). Each is on unless set to false.
+  //  PROMO_REMINDERS_ENABLED: Sun / Wed / Fri reorder reminders + new-customer intro and offers (7-8 AM, 10:30-11:30 AM IST)
+  //  TOMORROW_PLAN_REMINDER_ENABLED: "plan tomorrow's order" at 7 PM and 10 PM IST
+  //  TOMORROW_PLAN_ALL_CUSTOMERS: false = only customers who cancelled today's order get the tomorrow-plan push
+  PROMO_REMINDERS_ENABLED: Joi.boolean().truthy('true').falsy('false').empty('').default(true),
+  TOMORROW_PLAN_REMINDER_ENABLED: Joi.boolean().truthy('true').falsy('false').empty('').default(true),
+  TOMORROW_PLAN_ALL_CUSTOMERS: Joi.boolean().truthy('true').falsy('false').empty('').default(true),
   DRIVER_DEPOSIT_LIST_PRICE: Joi.number().empty('').default(2000),
   DRIVER_DEPOSIT_PRICE: Joi.number().empty('').default(1500),
   // DigiLocker (Aadhaar e-KYC). Empty = off: drivers upload the Aadhaar photos and an admin checks them

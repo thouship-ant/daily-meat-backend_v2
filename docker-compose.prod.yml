@@ -49,9 +49,54 @@ services:
   tools:
     profiles: ["tools"]
     build: { context: ., target: build }
-    environment: *dburl
+    environment:
+      <<: *dburl
+      # for prisma/migrate-images.ts (Supabase -> own storage)
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
     depends_on:
       db: { condition: service_healthy }
+
+  # Own S3-compatible image storage (MinIO). The API talks to it over the Docker network (AWS_ENDPOINT=http://minio:9000);
+  # customers load images through nginx on S3_PUBLIC_BASE_URL (see infra/nginx-images.conf). Ports are local-only.
+  # Data lives in MINIO_DATA_DIR on the server - back that folder up (see DEPLOY.md).
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID in .env (MinIO user)}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY in .env (MinIO password, 8+ characters)}
+    ports:
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - ${MINIO_DATA_DIR:-./minio-data}:/data
+
+  # One-off: creates the buckets. S3_BUCKET is public-read (catalog images); S3_KYC_BUCKET stays private (Aadhaar / selfie).
+  #   docker compose -f docker-compose.prod.yml --env-file .env run --rm minio-init
+  minio-init:
+    profiles: ["tools"]
+    image: minio/mc:latest
+    depends_on: [minio]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        until mc alias set local http://minio:9000 "$$AWS_ACCESS_KEY_ID" "$$AWS_SECRET_ACCESS_KEY"; do sleep 2; done;
+        mc mb --ignore-existing "local/$$S3_BUCKET";
+        mc anonymous set download "local/$$S3_BUCKET";
+        mc mb --ignore-existing "local/$$S3_KYC_BUCKET";
+        mc anonymous set none "local/$$S3_KYC_BUCKET";
+        echo buckets ready
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET in .env}
+      S3_KYC_BUCKET: ${S3_KYC_BUCKET:?set S3_KYC_BUCKET in .env}
 
   # Shared cache (public catalog, auth lookups, OTPs, last driver positions). Required in production so OTPs and
   # sessions behave the same however many API containers run.

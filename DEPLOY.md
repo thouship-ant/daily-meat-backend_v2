@@ -189,3 +189,46 @@ $C exec redis sh -c 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning flushall' 
 - **Customers say they get no OTP:** check `SMS_FORTIUS_*` / `SMTP_*`; in production a missing gateway is logged as an error and nothing is sent.
 - **HTTPS fails to issue:** the DNS A record must point at this server and port 80 must be reachable; see `sudo certbot certificates` and `/var/log/letsencrypt/`.
 - **Prisma "pooler" databases:** if you ever use Supabase's pooler instead of the bundled Postgres, add `?pgbouncer=true&connection_limit=10` to `DATABASE_URL` for the API and use a direct (non-pooled) URL when running `migrate`.
+
+## 9. Own image storage (MinIO) instead of Supabase
+
+Product, category and banner images live in an S3-compatible bucket. To host them yourself, the compose file has a `minio` container (data in `MINIO_DATA_DIR`, default `./minio-data`, back it up - `infra/backup.sh` does) and nginx serves the public bucket read-only on its own domain (`infra/nginx-images.conf`). The API code is unchanged: it already speaks S3.
+
+1. **DNS:** an A record `img.dailymeat.in` -> this server.
+2. **`.env`** (no quotes, no spaces in values):
+   ```
+   AWS_ENDPOINT=http://minio:9000
+   AWS_REGION=us-east-1
+   AWS_ACCESS_KEY_ID=dmstorage                 # MinIO login (choose your own)
+   AWS_SECRET_ACCESS_KEY=<long random password, 8+ chars>
+   S3_BUCKET=dailymeat                         # public images
+   S3_KYC_BUCKET=dailymeat-kyc                 # private (Aadhaar / selfie) - never public
+   S3_PUBLIC_BASE_URL=https://img.dailymeat.in/dailymeat
+   ```
+3. **Start MinIO and create the buckets:**
+   ```bash
+   C="docker compose -f docker-compose.prod.yml --env-file .env"
+   $C up -d minio
+   $C run --rm minio-init
+   ```
+4. **nginx + HTTPS for the images:**
+   ```bash
+   sed 's/YOUR_IMG_DOMAIN/img.dailymeat.in/; s/BUCKET/dailymeat/' infra/nginx-images.conf | sudo tee /etc/nginx/sites-available/daily-meat-images >/dev/null
+   sudo ln -s /etc/nginx/sites-available/daily-meat-images /etc/nginx/sites-enabled/
+   sudo nginx -t && sudo systemctl reload nginx
+   sudo certbot --nginx -d img.dailymeat.in
+   ```
+5. **Copy the existing images from Supabase and switch the database to the new URLs.** Supabase has to be serving files while this runs (a `402` means the project is still restricted - restore it for the day of the copy). It never deletes anything in Supabase and is safe to repeat:
+   ```bash
+   $C build tools
+   $C run --rm tools npx ts-node prisma/migrate-images.ts --dry-run     # what would be copied
+   $C run --rm tools npx ts-node prisma/migrate-images.ts
+   ```
+6. **Switch the API to the new storage and check:**
+   ```bash
+   $C up -d api
+   curl -I "$(curl -s https://dailymeat-api-v2.devmetsolutions.com/api/v1/customer/catalog/categories | grep -o 'https://img[^"]*' | head -1)"   # HTTP/2 200
+   ```
+   The public catalog is cached for a few minutes, so the app picks up the new URLs on its own. Upload one new product image from the admin screen to confirm uploads work.
+
+Notes: images are cached by nginx and by phones for 30 days (file names never change). The MinIO console is on `127.0.0.1:9001` only; reach it with `ssh -L 9001:127.0.0.1:9001 user@server`. Keep the Supabase project until you have checked a few weeks of traffic, then you can drop it.

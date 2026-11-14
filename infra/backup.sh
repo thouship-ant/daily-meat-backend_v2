@@ -10,3 +10,8 @@ DB_NAME="${DB_NAME:-daily_meat}"
 mkdir -p "$DEST"
 docker compose -f docker-compose.prod.yml --env-file .env exec -T db pg_dump -U "$DB_USER" -Fc "$DB_NAME" > "$DEST/db-$(date +%F_%H%M).dump"
 find "$DEST" -type f -name 'db-*.dump' -mtime +35 -delete
+# Own image storage (MinIO data folder, see DEPLOY.md). Skipped when you still use an outside S3 service.
+MINIO_DIR="${MINIO_DATA_DIR:-./minio-data}"
+if [ -d "$MINIO_DIR" ]; then
+  tar -czf "$DEST/minio-$(date +%F).tar.gz" -C "$MINIO_DIR" . && find "$DEST" -type f -name 'minio-*.tar.gz' -mtime +7 -delete
+fi

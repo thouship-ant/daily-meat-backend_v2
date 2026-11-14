@@ -258,14 +258,14 @@ export class UsersQueryDto extends PaginationDto {
 
 export class CategoryDto {
   @ApiProperty() @Transform(trim) @IsString() @Length(1, 100) name: string;
-  @ApiPropertyOptional({ type: 'string', format: 'binary' }) image?: any;
+  @ApiPropertyOptional({ type: 'string', format: 'binary' }) @IsOptional() image?: any;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
 }
 
 export class UpdateCategoryDto {
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @Length(1, 100) name?: string;
-  @ApiPropertyOptional({ type: 'string', format: 'binary' }) image?: any;
+  @ApiPropertyOptional({ type: 'string', format: 'binary' }) @IsOptional() image?: any;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
 }
@@ -275,7 +275,7 @@ export class ProductDto {
   @ApiProperty() @Transform(trim) @IsString() @Length(1, 200) name: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(255) storageInstructions?: string;
-  @ApiPropertyOptional({ type: 'string', format: 'binary' }) image?: any;
+  @ApiPropertyOptional({ type: 'string', format: 'binary' }) @IsOptional() image?: any;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isPopular?: boolean;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
@@ -286,7 +286,7 @@ export class UpdateProductDto {
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @Length(1, 200) name?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(255) storageInstructions?: string;
-  @ApiPropertyOptional({ type: 'string', format: 'binary' }) image?: any;
+  @ApiPropertyOptional({ type: 'string', format: 'binary' }) @IsOptional() image?: any;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isPopular?: boolean;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
@@ -318,7 +318,7 @@ export class UpdateVariantDto {
 
 export class BannerDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100) title?: string;
-  @ApiPropertyOptional({ type: 'string', format: 'binary' }) image?: any;
+  @ApiPropertyOptional({ type: 'string', format: 'binary' }) @IsOptional() image?: any;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;
 }
 

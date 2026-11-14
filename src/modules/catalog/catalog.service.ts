@@ -132,6 +132,16 @@ export class CatalogService {
     await this.invalidate();
   }
 
+  /** One product for the admin edit screen: inactive products and every variant included (never cached). */
+  async adminGetProduct(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: { variants: { orderBy: { price: 'asc' } }, category: { select: { id: true, name: true } } },
+    });
+    if (!product) throw ApiException.notFound('Product');
+    return product;
+  }
+
   async adminListProducts(opts: { categoryId?: string; skip: number; take: number; search?: string }) {
     const where: Prisma.ProductWhereInput = {
       ...(opts.categoryId ? { categoryId: opts.categoryId } : {}),

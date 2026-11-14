@@ -85,6 +85,12 @@ export class AdminCatalogController {
     return new Paginated(items, total, q.page, q.limit);
   }
 
+  @Get('products/:id')
+  @ApiOperation({ summary: 'One product incl. inactive ones and all variants (edit screen)' })
+  product(@Param('id', ParseUUIDPipe) id: string) {
+    return this.catalog.adminGetProduct(id);
+  }
+
   @Post('products')
   @UseInterceptors(image())
   @ApiConsumes('multipart/form-data')

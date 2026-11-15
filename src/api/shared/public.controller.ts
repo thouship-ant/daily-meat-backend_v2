@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpStatus, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Post, Query, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
@@ -46,12 +46,24 @@ export class PublicController {
   }
 
   @Get('app-version')
-  @ApiOperation({ summary: 'Latest store build numbers, so the apps can prompt for an upgrade' })
-  appVersion() {
+  @ApiOperation({
+    summary: 'Latest store build numbers, so the apps can prompt for an upgrade',
+    description: 'Daily Meat (customer + admin) by default; pass ?app=partner for the Daily Meat Delivery Partner app. ' +
+      'The default answer also says where the Delivery Partner app is published (partner.*StoreUrl), so drivers still on the main app can be pointed to it.',
+  })
+  appVersion(@Query('app') app?: string) {
     const c = this.config;
+    const url = (k: string) => c.get<string>(k) || null;
+    if (app === 'partner') {
+      return {
+        android: { latestBuild: Number(c.get('APP_PARTNER_ANDROID_LATEST_BUILD') ?? 0), storeUrl: url('APP_PARTNER_ANDROID_STORE_URL') },
+        ios: { latestBuild: Number(c.get('APP_PARTNER_IOS_LATEST_BUILD') ?? 0), storeUrl: url('APP_PARTNER_IOS_STORE_URL') },
+      };
+    }
     return {
-      android: { latestBuild: Number(c.get('APP_ANDROID_LATEST_BUILD') ?? 0), storeUrl: c.get('APP_ANDROID_STORE_URL') || null },
-      ios: { latestBuild: Number(c.get('APP_IOS_LATEST_BUILD') ?? 0), storeUrl: c.get('APP_IOS_STORE_URL') || null },
+      android: { latestBuild: Number(c.get('APP_ANDROID_LATEST_BUILD') ?? 0), storeUrl: url('APP_ANDROID_STORE_URL') },
+      ios: { latestBuild: Number(c.get('APP_IOS_LATEST_BUILD') ?? 0), storeUrl: url('APP_IOS_STORE_URL') },
+      partner: { androidStoreUrl: url('APP_PARTNER_ANDROID_STORE_URL'), iosStoreUrl: url('APP_PARTNER_IOS_STORE_URL') },
     };
   }
 }

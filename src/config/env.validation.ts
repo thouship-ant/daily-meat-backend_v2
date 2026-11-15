@@ -87,6 +87,11 @@ export const envValidationSchema = Joi.object({
   APP_ANDROID_STORE_URL: Joi.string().allow('').default(''),
   APP_IOS_LATEST_BUILD: Joi.number().empty('').default(0),
   APP_IOS_STORE_URL: Joi.string().allow('').default(''),
+  // The same for "Daily Meat Delivery Partner" (driver onboarding + deliveries), a separate store app
+  APP_PARTNER_ANDROID_LATEST_BUILD: Joi.number().empty('').default(0),
+  APP_PARTNER_ANDROID_STORE_URL: Joi.string().allow('').default(''),
+  APP_PARTNER_IOS_LATEST_BUILD: Joi.number().empty('').default(0),
+  APP_PARTNER_IOS_STORE_URL: Joi.string().allow('').default(''),
 
   SWAGGER_ENABLED: Joi.boolean().default(true),
 });

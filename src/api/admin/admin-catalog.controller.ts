@@ -164,6 +164,12 @@ export class AdminCatalogController {
     return this.catalog.updateBanner(id, { title: dto.title, isActive: dto.isActive, ...(imageUrl ? { imageUrl } : {}) });
   }
 
+  @Post('banners/:id/toggle')
+  @ApiOperation({ summary: 'Show / hide a banner' })
+  toggleBanner(@Param('id', ParseUUIDPipe) id: string) {
+    return this.catalog.toggleBanner(id);
+  }
+
   @Delete('banners/:id')
   async deleteBanner(@Param('id', ParseUUIDPipe) id: string) {
     await this.catalog.deleteBanner(id);

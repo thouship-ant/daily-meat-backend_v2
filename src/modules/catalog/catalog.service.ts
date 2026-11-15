@@ -248,6 +248,13 @@ export class CatalogService {
     await this.invalidate();
     return b;
   }
+  /** Show / hide a banner on the home screen (the admin list's on-off switch). */
+  async toggleBanner(id: string) {
+    const current = await this.prisma.banner.findUnique({ where: { id }, select: { isActive: true } });
+    if (!current) throw ApiException.notFound('Banner');
+    return this.updateBanner(id, { isActive: !current.isActive });
+  }
+
   async deleteBanner(id: string) {
     await this.prisma.banner.delete({ where: { id } });
     await this.invalidate();

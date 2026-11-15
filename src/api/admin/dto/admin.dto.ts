@@ -308,6 +308,8 @@ export class VariantDto {
 }
 
 export class UpdateVariantDto {
+  /** The edit screen sends it too; a variant cannot move to another product, so it is accepted and ignored. */
+  @ApiPropertyOptional({ description: 'Ignored' }) @IsOptional() @IsUUID() productId?: string;
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @Length(1, 50) weight?: string;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(0) price?: number;
   @ApiPropertyOptional({ nullable: true }) @IsOptional() @Type(() => Number) @IsNumber() @Min(0) discountedPrice?: number | null;

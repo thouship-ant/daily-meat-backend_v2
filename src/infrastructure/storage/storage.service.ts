@@ -8,6 +8,11 @@ import { ApiException, ErrorCode } from '../../common/api-error';
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+/** Older app builds send ".jpg" photos as "image/jpg" (not a real type): treat it, and "image/pjpeg", as JPEG. */
+const normalizeMime = (file: Express.Multer.File) => {
+  if (file.mimetype === 'image/jpg' || file.mimetype === 'image/pjpeg') file.mimetype = 'image/jpeg';
+};
+
 /** S3-compatible image storage (AWS S3, Cloudflare R2, Supabase Storage, MinIO ...). */
 @Injectable()
 export class StorageService {
@@ -17,6 +22,7 @@ export class StorageService {
   constructor(private readonly config: ConfigService) {}
 
   async uploadImage(file: Express.Multer.File, folder: string): Promise<string> {
+    normalizeMime(file);
     if (!ALLOWED_MIME.has(file.mimetype)) {
       throw ApiException.badRequest(ErrorCode.VALIDATION_FAILED, 'Only JPEG, PNG or WebP images are allowed.');
     }
@@ -43,6 +49,7 @@ export class StorageService {
    * authenticated API call.
    */
   async uploadPrivate(file: Express.Multer.File, folder: string): Promise<string> {
+    normalizeMime(file);
     if (!ALLOWED_MIME.has(file.mimetype)) {
       throw ApiException.badRequest(ErrorCode.VALIDATION_FAILED, 'Only JPEG, PNG or WebP images are allowed.');
     }

@@ -126,7 +126,8 @@ export class AdminCatalogController {
 
   @Patch('variants/:id')
   updateVariant(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateVariantDto) {
-    return this.catalog.updateVariant(id, dto);
+    const { productId: _ignored, ...data } = dto;
+    return this.catalog.updateVariant(id, data);
   }
 
   @Delete('variants/:id')

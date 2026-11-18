@@ -179,12 +179,16 @@ export class AuthService {
     throw ApiException.unauthorized('This sign-in step has expired. Please start again.', ErrorCode.INVALID_CREDENTIALS);
   }
 
-  /** Step 1: the password of the staff (admin / driver) role. On success the OTP is sent to the same number. */
+  /**
+   * Step 1: the password of the staff (admin / driver) role. On success the OTP is sent to the same number.
+   * Numbers with several roles always use this; a driver-only number may too (the Delivery Partner app signs drivers in
+   * with password AND OTP).
+   */
   async multiRoleStart(identifier: string, password: string): Promise<{ challengeToken: string; roles: Role[]; message: string }> {
     const user = await this.users.findByIdentifier(identifier);
     const valid = await bcrypt.compare(password, user?.password ?? DUMMY_HASH);
     const roles = user ? rolesOf(user) : [];
-    if (!user || !user.password || !valid || roles.length < 2 || !roles.some((r) => r === 'ADMIN' || r === 'DRIVER' || r === 'SUPERADMIN')) {
+    if (!user || !user.password || !valid || (roles.length < 2 && !roles.includes('DRIVER')) || !roles.some((r) => r === 'ADMIN' || r === 'DRIVER' || r === 'SUPERADMIN')) {
       throw ApiException.unauthorized('Invalid email/phone or password.', ErrorCode.INVALID_CREDENTIALS);
     }
     if (!user.isActive) {

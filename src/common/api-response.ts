@@ -7,6 +7,8 @@ export interface PageMeta {
   hasPrev: boolean;
   /** customers per section heading across the whole filtered list (customer list only) */
   groupCounts?: Record<string, number>;
+  /** notification inbox only: how many are unread (all pages) */
+  unread?: number;
 }
 
 /** Return this from a controller to get `data: [...]` plus `meta` pagination in the envelope. */

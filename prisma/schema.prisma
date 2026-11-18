@@ -148,6 +148,7 @@ model User {
   hub            Hub?                  @relation("DriverHomeHub", fields: [hubId], references: [id], onDelete: SetNull)
   hubAssignments DriverHubAssignment[]
   driverProfile  DriverProfile?
+  notifications  UserNotification[]
 
   addresses         Address[]
   orders            Order[]            @relation("CustomerOrders")
@@ -365,6 +366,7 @@ model Hub {
   scheduledNotifications ScheduledNotification[]
   supportTickets         SupportTicket[]
   driverProfiles         DriverProfile[]
+  driverInterests        DriverInterest[]
 
   @@map("shop_settings")
 }
@@ -485,6 +487,8 @@ model DriverProfile {
   @@index([status], map: "driver_profiles_status_idx")
   @@index([hubId], map: "driver_profiles_hub_idx")
   @@map("driver_profiles")
+  /// set when an admin first opened the application (until then it counts as unread); cleared when it is submitted again
+  adminSeenAt DateTime? @map("admin_seen_at") @db.Timestamptz(6)
 }
 
 model Banner {
@@ -636,4 +640,49 @@ model DriverHubAssignment {
   @@index([driverId, startDate, endDate], map: "driver_hub_assignments_driver_idx")
   @@index([hubId, startDate, endDate], map: "driver_hub_assignments_hub_idx")
   @@map("driver_hub_assignments")
+}
+
+/// Someone who wants to become a delivery partner while onboarding is on hold: kept so Daily Meat can SMS / e-mail them
+/// when their hub needs drivers. One row per mobile number (a second request updates it).
+model DriverInterest {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String    @db.VarChar(100)
+  phone      String    @unique @db.VarChar(20)
+  email      String    @db.VarChar(150)
+  hubId      Int?      @map("hub_id")
+  locality   String    @db.VarChar(120)
+  city       String    @db.VarChar(80)
+  pincode    String    @db.VarChar(6)
+  /// set when Daily Meat has contacted the person
+  notifiedAt DateTime? @map("notified_at") @db.Timestamptz(6)
+  /// set when an admin first opened the request (until then it counts as unread); cleared when the person asks again
+  seenAt     DateTime? @map("seen_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  hub Hub? @relation(fields: [hubId], references: [id], onDelete: SetNull)
+
+  @@index([hubId], map: "driver_interests_hub_idx")
+  @@map("driver_interests")
+}
+
+/// The notification inbox: every notification sent to a person (push / live alert) is also kept here, so the bell in the
+/// app can show it later. Unread until the person opens it. Old rows are cleaned up (see NotificationInboxService).
+model UserNotification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  title     String    @db.VarChar(200)
+  body      String    @db.VarChar(1000)
+  /// what the app needs to open the right screen (route, orderId, type ...)
+  data      Json?
+  /// the socket event / kind of notice (e.g. adminNewOrder, driverApplication)
+  kind      String?   @db.VarChar(60)
+  readAt    DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], map: "user_notifications_user_created_idx")
+  @@index([userId, readAt], map: "user_notifications_user_read_idx")
+  @@map("user_notifications")
 }

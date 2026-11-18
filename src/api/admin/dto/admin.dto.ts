@@ -176,6 +176,14 @@ export class DriverApplicationsQueryDto extends PaginationDto {
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
 }
 
+export class DriverInterestsQueryDto extends PaginationDto {
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
+}
+
+export class InboxQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ description: 'Only the ones not opened yet' }) @IsOptional() @Transform(({ value }) => value === true || value === 'true') unreadOnly?: boolean;
+}
+
 export class RejectApplicationDto {
   @ApiProperty({ description: 'What the driver has to fix (shown to the driver)' }) @Transform(trim) @IsString() @Length(3, 300) reason: string;
 }

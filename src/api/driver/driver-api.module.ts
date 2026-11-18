@@ -10,6 +10,7 @@ import { AuthModule } from '../../modules/auth/auth.module';
 import { DigiLockerService } from '../../modules/driver-onboarding/digilocker.service';
 import { DriverOnboardingModule } from '../../modules/driver-onboarding/driver-onboarding.module';
 import { DriverOnboardingService } from '../../modules/driver-onboarding/driver-onboarding.service';
+import { DriverInterestService } from '../../modules/driver-onboarding/driver-interest.service';
 import { AuthService } from '../../modules/auth/auth.service';
 import { OrderLifecycleService } from '../../modules/orders/order-lifecycle.service';
 import { OrderQueryService } from '../../modules/orders/order-query.service';
@@ -21,7 +22,7 @@ import { toUserView } from '../../modules/users/user.mapper';
 import { UsersModule } from '../../modules/users/users.module';
 import { UsersService } from '../../modules/users/users.service';
 import { ChangePasswordDto, LogoutDto, PushTokenDto, RefreshTokenDto, StaffLoginDto } from '../shared/shared.dto';
-import { BulkOrdersDto, ChooseHubDto, FailDeliveryDto, KycDto, LocationDto, VehicleDto } from './dto/driver.dto';
+import { BulkOrdersDto, ChooseHubDto, DriverInterestDto, FailDeliveryDto, InterestStatusQueryDto, KycDto, LocationDto, VehicleDto } from './dto/driver.dto';
 
 const DRIVER_VIEW = { navigation: true } as const; // drivers get map links, never cost/profit
 
@@ -153,6 +154,35 @@ export class DriverOnboardingController {
   }
 }
 
+@ApiTags('Driver · Interest (public)')
+@Public()
+@Controller('interest')
+export class DriverInterestController {
+  constructor(private readonly interest: DriverInterestService) {}
+
+  @Get('hubs')
+  @ApiOperation({ summary: 'Hubs a person can choose from on the "become a delivery partner" form' })
+  hubs() {
+    return this.interest.hubChoices();
+  }
+
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Get('status')
+  @ApiOperation({ summary: 'Has this mobile number already registered its interest? (so the app does not ask again)' })
+  async status(@Query() q: InterestStatusQueryDto) {
+    return { registered: await this.interest.isRegistered(q.phone) };
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post()
+  @HttpCode(200)
+  @ApiOperation({ summary: 'A person who is not a delivery partner yet asks to be told when their hub needs drivers' })
+  async submit(@Body() dto: DriverInterestDto) {
+    await this.interest.submit(dto);
+    return new Message('Thank you! We will contact you by SMS or e-mail when your hub needs delivery partners.');
+  }
+}
+
 @ApiTags('Driver · Deliveries')
 @Auth('DRIVER')
 @Controller()
@@ -268,6 +298,6 @@ export class DriverOrdersController {
 
 @Module({
   imports: [AuthModule, UsersModule, OrdersModule, TrackingModule, DriverOnboardingModule],
-  controllers: [DriverAuthController, DriverOnboardingController, DriverOrdersController],
+  controllers: [DriverAuthController, DriverOnboardingController, DriverInterestController, DriverOrdersController],
 })
 export class DriverApiModule {}

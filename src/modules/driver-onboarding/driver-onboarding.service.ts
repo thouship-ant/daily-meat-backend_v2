@@ -227,13 +227,13 @@ export class DriverOnboardingService {
     }
     await this.prisma.driverProfile.update({
       where: { userId },
-      data: { status: 'PENDING_APPROVAL', submittedAt: new Date(), reviewedAt: null, reviewedById: null, rejectReason: null },
+      data: { status: 'PENDING_APPROVAL', submittedAt: new Date(), reviewedAt: null, reviewedById: null, rejectReason: null, adminSeenAt: null },
     });
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, phone: true } });
     void this.notifications.toHubAdmins(p.hubId, {
       title: 'New driver application',
       body: `${user?.name || user?.phone || 'A new driver'} has completed KYC and paid the deposit. Review and approve.`,
-      data: { type: 'DRIVER_APPLICATION', userId },
+      data: { type: 'DRIVER_APPLICATION', route: 'driver_applications', userId },
       event: 'driverApplication',
     });
     return this.state(userId);
@@ -259,6 +259,16 @@ export class DriverOnboardingService {
     return { items: rows.map((r) => this.adminView(r)), total };
   }
 
+  /** Submitted applications no admin has opened yet */
+  unreviewedCount(hubId?: number | null) {
+    return this.prisma.driverProfile.count({ where: { status: 'PENDING_APPROVAL', adminSeenAt: null, ...(hubId != null ? { hubId } : {}) } });
+  }
+
+  /** An admin opened the application: it is no longer unread (first opening wins) */
+  async markSeen(userId: string) {
+    await this.prisma.driverProfile.updateMany({ where: { userId, adminSeenAt: null }, data: { adminSeenAt: new Date() } });
+  }
+
   async adminDetail(userId: string) {
     const p = await this.prisma.driverProfile.findUnique({
       where: { userId },
@@ -274,6 +284,8 @@ export class DriverOnboardingService {
       name: p.user.name,
       phone: p.user.phone,
       status: p.status,
+      /** false = no admin has opened this application yet */
+      seen: !!p.adminSeenAt,
       submittedAt: p.submittedAt,
       reviewedAt: p.reviewedAt,
       rejectReason: p.rejectReason,

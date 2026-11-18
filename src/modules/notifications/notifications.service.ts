@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
+import { NotificationInboxService } from './notification-inbox.service';
 import { PushService } from './push.service';
 import { RealtimeGateway } from './realtime.gateway';
 
@@ -27,10 +28,12 @@ export class NotificationsService {
     private readonly push: PushService,
     private readonly realtime: RealtimeGateway,
     private readonly users: UsersService,
+    private readonly inbox: NotificationInboxService,
   ) {}
 
   async toUser(userId: string, notice: Notice): Promise<void> {
     try {
+      await this.inbox.record([userId], notice);
       if (notice.event) this.realtime.toUser(userId, notice.event, { title: notice.title, body: notice.body, data: notice.data ?? {} });
       const tokens = await this.users.pushTokensForUser(userId);
       await this.push.send(tokens, { title: notice.title, body: notice.body, data: notice.data, kind: notice.event });
@@ -41,6 +44,7 @@ export class NotificationsService {
 
   async toAdmins(notice: Notice): Promise<void> {
     try {
+      await this.inbox.record(await this.users.idsForAdmins({ superAdmins: !(notice.event && ADMIN_ONLY_ALERTS.has(notice.event)) }), notice);
       if (notice.event) this.realtime.toAdmins(notice.event, { title: notice.title, body: notice.body, data: notice.data ?? {} });
       const tokens = await this.users.pushTokensForRole('ADMIN', { superAdmins: !(notice.event && ADMIN_ONLY_ALERTS.has(notice.event)) });
       await this.push.send(tokens, { title: notice.title, body: notice.body, data: notice.data, kind: notice.event });
@@ -52,6 +56,7 @@ export class NotificationsService {
   /** Like toAdmins, but the push goes only to the admins of that hub (and super admins). */
   async toHubAdmins(hubId: number | null, notice: Notice): Promise<void> {
     try {
+      await this.inbox.record(await this.users.idsForHubAdmins(hubId, { superAdmins: !(notice.event && ADMIN_ONLY_ALERTS.has(notice.event)) }), notice);
       if (notice.event) this.realtime.toAdmins(notice.event, { title: notice.title, body: notice.body, data: notice.data ?? {} });
       const tokens = await this.users.pushTokensForHubAdmins(hubId, { superAdmins: !(notice.event && ADMIN_ONLY_ALERTS.has(notice.event)) });
       await this.push.send(tokens, { title: notice.title, body: notice.body, data: notice.data, kind: notice.event });
@@ -63,6 +68,7 @@ export class NotificationsService {
   /** Tell every super admin (live + push), e.g. that someone's phone is hanging. */
   async toSuperAdmins(notice: Notice): Promise<void> {
     try {
+      await this.inbox.record(await this.users.idsForRole('SUPERADMIN'), notice);
       if (notice.event) {
         const ids = await this.users.idsForRole('SUPERADMIN');
         ids.forEach((id) => this.realtime.toUser(id, notice.event!, { title: notice.title, body: notice.body, data: notice.data ?? {} }));

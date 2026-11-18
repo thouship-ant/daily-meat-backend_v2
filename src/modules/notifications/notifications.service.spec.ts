@@ -3,16 +3,20 @@ jest.mock('expo-server-sdk', () => ({ Expo: class {} })); // ESM-only package: n
 import { NotificationsService } from './notifications.service';
 
 function make() {
-  const calls: any = { roleOpts: [] as any[], pushed: [] as any[], toUser: [] as any[] };
+  const calls: any = { roleOpts: [] as any[], pushed: [] as any[], toUser: [] as any[], saved: [] as any[] };
   const users: any = {
     pushTokensForRole: async (role: string, opts: any) => { calls.roleOpts.push({ role, opts }); return ['tok']; },
     pushTokensForHubAdmins: async () => ['tok'],
+    pushTokensForUser: async () => ['tok'],
     idsForRole: async () => ['sa1', 'sa2'],
+    idsForAdmins: async () => ['a1', 'sa1'],
+    idsForHubAdmins: async () => ['a1'],
     findById: async () => ({ name: 'Ravi', phone: '+919000000001', role: 'DRIVER' }),
   };
   const push: any = { send: async (_t: string[], p: any) => { calls.pushed.push(p); } };
   const realtime: any = { toAdmins: () => undefined, toUser: (id: string, ev: string) => calls.toUser.push([id, ev]) };
-  return { svc: new NotificationsService(push, realtime, users), calls };
+  const inbox: any = { record: async (ids: string[], n: any) => { calls.saved.push([ids, n.title]); } };
+  return { svc: new NotificationsService(push, realtime, users, inbox), calls };
 }
 
 describe('NotificationsService', () => {
@@ -33,5 +37,19 @@ describe('NotificationsService', () => {
     expect(calls.toUser).toEqual([['sa1', 'deviceSlow'], ['sa2', 'deviceSlow']]);
     expect(calls.pushed[0].title).toBe('Phone slow / hanging');
     expect(calls.pushed[0].body).toContain('Ravi (DRIVER)');
+  });
+
+  it('keeps a copy of every notice for the people it was sent to (the bell)', async () => {
+    const { svc, calls } = make();
+    await svc.toUser('u9', { title: 'Order update', body: 'b' });
+    await svc.toAdmins({ title: 'New order', body: 'b', event: 'adminNewOrder' });
+    await svc.toHubAdmins(1, { title: 'New application', body: 'b' });
+    await svc.toSuperAdmins({ title: 'Slow phone', body: 'b' });
+    expect(calls.saved).toEqual([
+      [['u9'], 'Order update'],
+      [['a1', 'sa1'], 'New order'],
+      [['a1'], 'New application'],
+      [['sa1', 'sa2'], 'Slow phone'],
+    ]);
   });
 });

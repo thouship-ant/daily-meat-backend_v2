@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsLatitude, IsLongitude, IsNotEmpty, IsNumber, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsEmail, IsInt, IsLatitude, IsLongitude, IsNotEmpty, IsNumber, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -43,4 +43,20 @@ export class VehicleDto {
   @ApiProperty({ example: 'Honda Activa 6G' }) @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(80) model: string;
   @ApiProperty({ example: 'TN45AB1234' }) @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(20) regNo: string;
   @ApiProperty({ example: 2021, description: 'Year of manufacture' }) @Type(() => Number) @IsInt() year: number;
+}
+
+// ---------- interest form (numbers that are not delivery partners yet) ----------
+
+export class InterestStatusQueryDto {
+  @ApiProperty({ example: '+919876543210' }) @Transform(trim) @Matches(/^\+91[6-9]\d{9}$/, { message: 'Enter a valid 10-digit mobile number.' }) phone: string;
+}
+
+export class DriverInterestDto {
+  @ApiProperty() @Transform(trim) @IsString() @Length(2, 100) name: string;
+  @ApiProperty({ example: '+919876543210' }) @Transform(trim) @Matches(/^\+91[6-9]\d{9}$/, { message: 'Enter a valid 10-digit mobile number.' }) phone: string;
+  @ApiProperty() @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value)) @IsEmail({}, { message: 'Enter a valid e-mail address.' }) @MaxLength(150) email: string;
+  @ApiPropertyOptional({ description: 'The hub the person would like to work for' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number;
+  @ApiProperty({ example: 'Gandhipuram' }) @Transform(trim) @IsString() @Length(2, 120) locality: string;
+  @ApiProperty({ example: 'Coimbatore' }) @Transform(trim) @IsString() @Length(2, 80) city: string;
+  @ApiProperty({ example: '641012' }) @Transform(trim) @Matches(/^[1-9]\d{5}$/, { message: 'Enter a valid 6-digit pincode.' }) pincode: string;
 }

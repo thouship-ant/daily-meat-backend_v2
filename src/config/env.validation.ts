@@ -43,7 +43,7 @@ export const envValidationSchema = Joi.object({
   // on/off, days without opening the app, and how many customers get the SMS each Sunday (a full round of all eligible
   // customers then takes ceil(eligible / this) weeks).
   SMS_FORTIUS_APP_REMINDER_TEMPLATE_ID: Joi.string().allow('').default('1777179455851148185'),
-  APP_REMINDER_SMS_ENABLED: Joi.boolean().truthy('true').falsy('false').empty('').default(true),
+  APP_REMINDER_SMS_ENABLED: Joi.boolean().empty('').truthy('true').falsy('false').empty('').default(true),
   APP_REMINDER_SMS_INACTIVE_DAYS: Joi.number().integer().min(1).empty('').default(7),
   APP_REMINDER_SMS_PER_RUN: Joi.number().integer().min(1).empty('').default(50),
 
@@ -64,14 +64,14 @@ export const envValidationSchema = Joi.object({
   S3_KYC_BUCKET: Joi.string().allow('').default(''),
   // New driver starting deposit (T-shirt + basket): list price (struck out) and the offer price actually charged
   // General marketing push (the admin "Marketing Broadcast" to customers and the scheduled plans). false = nothing is sent. Default true.
-  MARKETING_PUSH_ENABLED: Joi.boolean().truthy('true').falsy('false').default(true),
+  MARKETING_PUSH_ENABLED: Joi.boolean().empty('').truthy('true').falsy('false').default(true),
   // Automatic customer reminders (also need MARKETING_PUSH_ENABLED). Each is on unless set to false.
   //  PROMO_REMINDERS_ENABLED: Sun / Wed / Fri reorder reminders + new-customer intro and offers (7-8 AM, 10:30-11:30 AM IST)
   //  TOMORROW_PLAN_REMINDER_ENABLED: "plan tomorrow's order" at 7 PM and 10 PM IST
   //  TOMORROW_PLAN_ALL_CUSTOMERS: false = only customers who cancelled today's order get the tomorrow-plan push
-  PROMO_REMINDERS_ENABLED: Joi.boolean().truthy('true').falsy('false').empty('').default(true),
-  TOMORROW_PLAN_REMINDER_ENABLED: Joi.boolean().truthy('true').falsy('false').empty('').default(true),
-  TOMORROW_PLAN_ALL_CUSTOMERS: Joi.boolean().truthy('true').falsy('false').empty('').default(true),
+  PROMO_REMINDERS_ENABLED: Joi.boolean().empty('').truthy('true').falsy('false').empty('').default(true),
+  TOMORROW_PLAN_REMINDER_ENABLED: Joi.boolean().empty('').truthy('true').falsy('false').empty('').default(true),
+  TOMORROW_PLAN_ALL_CUSTOMERS: Joi.boolean().empty('').truthy('true').falsy('false').empty('').default(true),
   DRIVER_DEPOSIT_LIST_PRICE: Joi.number().empty('').default(2000),
   DRIVER_DEPOSIT_PRICE: Joi.number().empty('').default(1500),
   // DigiLocker (Aadhaar e-KYC). Empty = off: drivers upload the Aadhaar photos and an admin checks them
@@ -93,5 +93,5 @@ export const envValidationSchema = Joi.object({
   APP_PARTNER_IOS_LATEST_BUILD: Joi.number().empty('').default(0),
   APP_PARTNER_IOS_STORE_URL: Joi.string().allow('').default(''),
 
-  SWAGGER_ENABLED: Joi.boolean().default(true),
+  SWAGGER_ENABLED: Joi.boolean().empty('').default(true),
 });

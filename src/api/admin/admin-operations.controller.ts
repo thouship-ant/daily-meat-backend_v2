@@ -17,6 +17,8 @@ import { CustomerDirectoryService, CustomerFilter } from '../../modules/users/cu
 import { DriverHubsService } from '../../modules/users/driver-hubs.service';
 import { asText, toCsv } from '../../common/utils/csv';
 import { ReportsService } from '../../modules/reports/reports.service';
+import { NotificationInboxService } from '../../modules/notifications/notification-inbox.service';
+import { DriverInterestService } from '../../modules/driver-onboarding/driver-interest.service';
 import { DriverOnboardingService, DocumentKind } from '../../modules/driver-onboarding/driver-onboarding.service';
 import { StaffService } from '../../modules/users/staff.service';
 import { UsersService } from '../../modules/users/users.service';
@@ -34,7 +36,7 @@ import {
   CustomersQueryDto,
   ReportQueryDto,
   StaffQueryDto,
-  DriverApplicationsQueryDto,
+  DriverApplicationsQueryDto, DriverInterestsQueryDto, InboxQueryDto,
   RejectApplicationDto,
   AddNumberDto,
   UpdateStaffDto,
@@ -86,11 +88,95 @@ export class AdminAnalysisController {
   }
 }
 
+@ApiTags('Admin · Notification inbox')
+@Auth('ADMIN')
+@Controller('inbox')
+export class AdminInboxController {
+  constructor(private readonly inbox: NotificationInboxService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Notifications sent to me (newest first) and how many are unread' })
+  async list(@CurrentUser('id') userId: string, @Query() q: InboxQueryDto) {
+    const { items, total, unread } = await this.inbox.list(userId, { skip: q.skip, take: q.limit, unreadOnly: q.unreadOnly });
+    return new Paginated(items, total, q.page, q.limit, { unread });
+  }
+
+  @Get('unread-count')
+  @ApiOperation({ summary: 'Number on the bell' })
+  async unread(@CurrentUser('id') userId: string) {
+    return { unread: await this.inbox.unreadCount(userId) };
+  }
+
+  @Post('read-all')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Mark everything as read' })
+  async readAll(@CurrentUser('id') userId: string) {
+    await this.inbox.markAllRead(userId);
+    return new Message('All marked as read.');
+  }
+
+  @Post(':id/read')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Mark one notification as read (when it is opened)' })
+  async read(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    await this.inbox.markRead(userId, id);
+    return new Message('Marked as read.');
+  }
+}
+
+@ApiTags('Admin · Driver interest')
+@Auth('ADMIN')
+@Controller('driver-interests')
+export class AdminDriverInterestsController {
+  constructor(private readonly interest: DriverInterestService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'People who asked to become delivery partners (newest first), optionally for one hub' })
+  async list(@Query() q: DriverInterestsQueryDto) {
+    const { items, total } = await this.interest.adminList({ hubId: q.hubId, skip: q.skip, take: q.limit });
+    return new Paginated(items, total, q.page, q.limit);
+  }
+
+  @Post(':id/seen')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'An admin opened this request: it is no longer unread' })
+  async seen(@Param('id', ParseUUIDPipe) id: string) {
+    await this.interest.markSeen(id);
+    return new Message('Marked as read.');
+  }
+
+  @Post(':id/notified')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Mark that this person has been contacted' })
+  async notified(@Param('id', ParseUUIDPipe) id: string) {
+    await this.interest.markNotified(id);
+    return new Message('Marked as contacted.');
+  }
+}
+
 @ApiTags('Admin · Driver applications')
 @Auth('ADMIN')
 @Controller('driver-applications')
 export class AdminDriverApplicationsController {
-  constructor(private readonly onboarding: DriverOnboardingService) {}
+  constructor(
+    private readonly onboarding: DriverOnboardingService,
+    private readonly interest: DriverInterestService,
+  ) {}
+
+  @Get('unread')
+  @ApiOperation({ summary: 'How many interest requests and submitted applications no admin has opened yet (for the bell and tab badges)' })
+  async unread(@Query() q: DriverInterestsQueryDto) {
+    const [interested, review] = await Promise.all([this.interest.unreadCount(q.hubId), this.onboarding.unreviewedCount(q.hubId)]);
+    return { interested, review, total: interested + review };
+  }
+
+  @Post(':userId/seen')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'An admin opened this application: it is no longer unread' })
+  async seen(@Param('userId', ParseUUIDPipe) userId: string) {
+    await this.onboarding.markSeen(userId);
+    return new Message('Marked as read.');
+  }
 
   @Get()
   @ApiOperation({ summary: 'New drivers\' applications (submitted ones by default), oldest first; optionally one status / hub' })

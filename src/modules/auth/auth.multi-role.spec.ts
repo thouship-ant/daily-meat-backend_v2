@@ -53,6 +53,23 @@ describe('AuthService multi-role sign-in', () => {
     expect(result.tokens.accessToken).toBeTruthy();
   });
 
+  it('a driver-only number can sign in with password and OTP too (Delivery Partner app)', async () => {
+    const driver = { ...user, role: 'DRIVER', additionalRoles: [] };
+    const svc = make(driver);
+    const start = await svc.multiRoleStart(PHONE, 'DAS@3781');
+    expect(sentTo).toEqual([PHONE]);
+    const verified = await svc.multiRoleVerifyOtp(start.challengeToken, '123456');
+    expect(verified.roles).toEqual(['DRIVER']);
+    const result = await svc.multiRoleSelect(verified.selectionToken, 'DRIVER');
+    expect(result.user.role).toBe('DRIVER');
+  });
+
+  it('a customer-only number cannot use the password + OTP flow', async () => {
+    const svc = make({ ...user, role: 'CUSTOMER', additionalRoles: [] });
+    await expect(svc.multiRoleStart(PHONE, 'DAS@3781')).rejects.toBeTruthy();
+    expect(sentTo).toEqual([]);
+  });
+
   it('a wrong password sends no OTP', async () => {
     await expect(service.multiRoleStart(PHONE, 'nope')).rejects.toBeTruthy();
     expect(sentTo).toEqual([]);

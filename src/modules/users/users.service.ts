@@ -302,6 +302,30 @@ export class UsersService {
     return [...new Set(users.flatMap((u) => this.splitTokens(u)))];
   }
 
+  /** Ids of the admins one hub's notices go to (same people as pushTokensForHubAdmins, with or without a push token) */
+  async idsForHubAdmins(hubId: number | null, opts: { superAdmins?: boolean } = {}): Promise<string[]> {
+    const rows = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          ...(opts.superAdmins === false ? [] : [{ role: 'SUPERADMIN' as Role }]),
+          { role: 'ADMIN' as Role, ...(hubId == null ? {} : { OR: [{ hubId }, { hubId: null }] }) },
+        ],
+      },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
+  /** Ids of every active admin (and super admins unless told not to), same people as pushTokensForRole('ADMIN') */
+  async idsForAdmins(opts: { superAdmins?: boolean } = {}): Promise<string[]> {
+    const rows = await this.prisma.user.findMany({
+      where: { isActive: true, OR: [{ role: 'ADMIN' as Role }, { additionalRoles: { has: 'ADMIN' as Role } }, ...(opts.superAdmins !== false ? [{ role: 'SUPERADMIN' as Role }] : [])] },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
   /** Ids of the active accounts that hold a role (e.g. every super admin, to reach them over the live socket). */
   async idsForRole(role: Role): Promise<string[]> {
     const rows = await this.prisma.user.findMany({ where: { isActive: true, OR: [{ role }, { additionalRoles: { has: role } }] }, select: { id: true } });

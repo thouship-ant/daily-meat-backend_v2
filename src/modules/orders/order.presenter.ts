@@ -8,7 +8,7 @@ export const ORDER_INCLUDE = {
   items: { include: { product: { select: { imageUrl: true } } }, orderBy: { createdAt: 'asc' } },
   user: { select: { id: true, name: true, phone: true } },
   driver: { select: { id: true, name: true, phone: true } },
-  hub: { select: { id: true, name: true } },
+  hub: { select: { id: true, name: true, latitude: true, longitude: true } },
 } satisfies Prisma.OrderInclude;
 
 export type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
@@ -76,7 +76,8 @@ export function presentOrder(o: OrderWithRelations, opts: PresentOptions = {}) {
           }
         : {}),
     },
-    hub: o.hub ?? null,
+    // the hub's map position is only for the driver app (it works out the pick-up distance for earnings)
+    hub: o.hub ? (opts.navigation ? o.hub : { id: o.hub.id, name: o.hub.name }) : null,
     customer: o.user ?? null,
     driver: o.driver ?? null,
     items: o.items.map((i) => ({

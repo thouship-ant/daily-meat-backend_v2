@@ -6,6 +6,7 @@ import { TrackingModule } from '../tracking/tracking.module';
 import { UsersModule } from '../users/users.module';
 import { AppReminderSmsService } from './app-reminder-sms.service';
 import { MarketingService } from './marketing.service';
+import { NotificationInboxService } from './notification-inbox.service';
 import { NotificationsService } from './notifications.service';
 import { OrderNotificationsListener } from './order-notifications.listener';
 import { PromoRemindersService } from './promo-reminders.service';
@@ -23,7 +24,7 @@ import { RealtimeGateway } from './realtime.gateway';
       useFactory: (c: ConfigService) => ({ secret: c.getOrThrow<string>('JWT_SECRET') }),
     }),
   ],
-  providers: [PushService, RealtimeGateway, NotificationsService, OrderNotificationsListener, MarketingService, PromoRemindersService, AppReminderSmsService],
-  exports: [NotificationsService, MarketingService, PromoRemindersService],
+  providers: [PushService, RealtimeGateway, NotificationInboxService, NotificationsService, OrderNotificationsListener, MarketingService, PromoRemindersService, AppReminderSmsService],
+  exports: [NotificationsService, NotificationInboxService, MarketingService, PromoRemindersService],
 })
 export class NotificationsModule {}

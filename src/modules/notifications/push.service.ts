@@ -101,7 +101,10 @@ export class PushService {
         for (const ids of this.expo.chunkPushNotificationReceiptIds([...tokenByTicket.keys()])) {
           const receipts = await this.expo.getPushNotificationReceiptsAsync(ids);
           for (const [id, r] of Object.entries(receipts)) {
-            if (r.status === 'error' && r.details?.error === 'DeviceNotRegistered') {
+            if (r.status !== 'error') continue;
+            // InvalidCredentials / MismatchSenderId / MessageRateExceeded ... are why a push is accepted but never shows up
+            this.logger.warn(`Push receipt error (${r.details?.error ?? 'unknown'}): ${r.message}`);
+            if (r.details?.error === 'DeviceNotRegistered') {
               const token = tokenByTicket.get(id);
               if (token) await this.users.purgePushToken(token);
             }

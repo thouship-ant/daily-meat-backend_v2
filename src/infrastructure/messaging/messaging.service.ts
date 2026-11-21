@@ -3,6 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { createTransport, Transporter } from 'nodemailer';
 import { ApiException } from '../../common/api-error';
 
+/** The gateway's endpoint; used when SMS_FORTIUS_BASE_URL is left empty (it is empty in .env.example) */
+const DEFAULT_SMS_URL = 'https://smsfortius.org/V2/apikey.php';
+
 /** Outbound SMS (Fortius DLT gateway) and email (SMTP). Falls back to logging when not configured (dev). */
 @Injectable()
 export class MessagingService {
@@ -24,7 +27,7 @@ export class MessagingService {
     const apiKey = this.config.get<string>('SMS_FORTIUS_API_KEY');
     const senderId = this.config.get<string>('SMS_FORTIUS_SENDER_ID');
     const templateId = this.config.get<string>('SMS_FORTIUS_TEMPLATE_ID');
-    const baseUrl = this.config.get<string>('SMS_FORTIUS_BASE_URL');
+    const baseUrl = this.config.get<string>('SMS_FORTIUS_BASE_URL') || DEFAULT_SMS_URL;
 
     if (!apiKey || !senderId || !templateId || !baseUrl) {
       // Never log the OTP in production.
@@ -44,6 +47,9 @@ export class MessagingService {
 
     try {
       const res = await fetch(`${baseUrl}?${params.toString()}`, { method: 'GET', signal: AbortSignal.timeout(10_000) });
+      const body = (await res.text().catch(() => '')).slice(0, 300);
+      // gateways often answer 200 with an error in the body (bad template, no balance, DND), so log it
+      this.logger.log(`OTP SMS to ${phone.slice(0, -4)}**** -> ${res.status} ${body}`);
       if (!res.ok) throw new Error(`SMS gateway responded ${res.status}`);
     } catch (e) {
       this.logger.error(`SMS send failed: ${(e as Error).message}`);
@@ -58,7 +64,7 @@ export class MessagingService {
   async sendTemplateSms(phone: string, templateId: string, message: string): Promise<boolean> {
     const apiKey = this.config.get<string>('SMS_FORTIUS_API_KEY');
     const senderId = this.config.get<string>('SMS_FORTIUS_SENDER_ID');
-    const baseUrl = this.config.get<string>('SMS_FORTIUS_BASE_URL');
+    const baseUrl = this.config.get<string>('SMS_FORTIUS_BASE_URL') || DEFAULT_SMS_URL;
     if (!apiKey || !senderId || !baseUrl || !templateId) {
       if (this.config.get('NODE_ENV') !== 'production') this.logger.warn(`[SMS mock] ${phone} -> ${message}`);
       else this.logger.error('SMS gateway is not configured; the SMS was not sent.');

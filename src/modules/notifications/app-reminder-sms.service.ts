@@ -4,20 +4,23 @@ import { MessagingService } from '../../infrastructure/messaging/messaging.servi
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 /**
- * "Come back to Daily Meat" SMS, every Sunday at 8:00 AM IST (Fortius DLT gateway, one approved template).
+ * "Come back to Daily Meat" weekend SMS, every Sunday at 10:30 AM IST by default (Fortius DLT gateway, one approved
+ * template). The weekend day(s) and the time are env settings: APP_REMINDER_SMS_DAYS (e.g. SUN, SAT, or SAT,SUN) and
+ * APP_REMINDER_SMS_TIME (HH:MM IST).
  *
  * Who is eligible: active customers with a phone number who most likely no longer have the app - no push device
  * registered (the push service removes a device token when the phone reports the app is gone) - and who have not opened
  * the app for APP_REMINDER_SMS_INACTIVE_DAYS days. Customers who turned off promotional messages, deleted accounts and
  * numbers that are not Indian mobiles are left out.
  *
- * Rotation: each Sunday only APP_REMINDER_SMS_PER_RUN (default 50) eligible customers get the SMS, so a full round takes
- * weeks = ceil(eligible / 50). Customers who never got one go first, then the ones who waited longest. Everyone who is sent
+ * Rotation: each run (every scheduled weekend day) only APP_REMINDER_SMS_PER_RUN (default 50) eligible customers get the
+ * SMS, so a full round takes weeks = ceil(eligible / (50 x runs per week)). Customers who never got one go first, then the ones who waited longest. Everyone who is sent
  * one is due again on  today + weeks x 7 days  (800 eligible -> 16 weeks); customers who become eligible later (e.g. they
  * uninstall) simply join the queue. Every attempt is written to reminder_sms_logs with its date and time.
  *
  * Settings: APP_REMINDER_SMS_ENABLED (default true), SMS_FORTIUS_APP_REMINDER_TEMPLATE_ID, APP_REMINDER_SMS_INACTIVE_DAYS
- * (default 7), APP_REMINDER_SMS_PER_RUN (default 50). Like the other reminders, the timer runs in production, or
+ * (default 7), APP_REMINDER_SMS_PER_RUN (default 50), APP_REMINDER_SMS_DAYS (default SUN), APP_REMINDER_SMS_TIME
+ * (default 10:30). Like the other reminders, the timer runs in production, or
  * elsewhere with SCHEDULED_NOTIFICATIONS_ENABLED=true.
  */
 
@@ -32,10 +35,32 @@ const DAY_MS = 86_400_000;
 const BATCH = 10; // parallel sends; each batch is logged once it is done, so a restart repeats at most one batch
 const NAME_MAX = 30; // DLT variable length
 
-/** Sunday 08:00 - 08:09 IST (a once-a-minute check; the caller makes sure it runs once per day). */
-export function isAppReminderDue(now: Date): boolean {
+const DAY_INDEX: Record<string, number> = { SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6 };
+export const DEFAULT_REMINDER_DAYS = 'SUN';
+export const DEFAULT_REMINDER_TIME = '10:30';
+
+/** "SAT,SUN" -> [6, 0]; unknown names are ignored; nothing valid -> Sunday only. */
+export function parseReminderDays(value: unknown): number[] {
+  const days = String(value ?? '')
+    .split(/[\s,;]+/)
+    .map((d) => DAY_INDEX[d.trim().slice(0, 3).toUpperCase()])
+    .filter((d): d is number => d !== undefined);
+  return days.length ? [...new Set(days)] : [0];
+}
+
+/** "10:30" -> minutes after midnight (630); anything else -> 10:30. */
+export function parseReminderTime(value: unknown): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(value ?? '').trim());
+  const h = m ? Number(m[1]) : 10;
+  const min = m ? Number(m[2]) : 30;
+  return h > 23 || min > 59 ? 10 * 60 + 30 : h * 60 + min;
+}
+
+/** On a scheduled weekend day, from the set time to 9 minutes after it, IST (a once-a-minute check; the caller makes sure it runs once per day). */
+export function isAppReminderDue(now: Date, days: number[] = [0], timeMin: number = 10 * 60 + 30): boolean {
   const t = new Date(now.getTime() + IST_MS);
-  return t.getUTCDay() === 0 && t.getUTCHours() === 8 && t.getUTCMinutes() < 10;
+  const since = t.getUTCHours() * 60 + t.getUTCMinutes() - timeMin;
+  return days.includes(t.getUTCDay()) && since >= 0 && since < 10;
 }
 
 /** The IST calendar day (YYYY-MM-DD) of a moment. */
@@ -87,6 +112,13 @@ export class AppReminderSmsService implements OnModuleInit, OnModuleDestroy {
     return Math.max(1, Math.floor(Number(this.config.get('APP_REMINDER_SMS_PER_RUN') ?? DEFAULT_PER_RUN)) || DEFAULT_PER_RUN);
   }
 
+  private get days(): number[] {
+    return parseReminderDays(this.config.get('APP_REMINDER_SMS_DAYS') ?? DEFAULT_REMINDER_DAYS);
+  }
+  private get timeMin(): number {
+    return parseReminderTime(this.config.get('APP_REMINDER_SMS_TIME') ?? DEFAULT_REMINDER_TIME);
+  }
+
   onModuleInit() {
     const flag = process.env.SCHEDULED_NOTIFICATIONS_ENABLED;
     const on = flag ? flag === 'true' : process.env.NODE_ENV === 'production';
@@ -94,7 +126,7 @@ export class AppReminderSmsService implements OnModuleInit, OnModuleDestroy {
       this.logger.log('App reminder SMS is off (set SCHEDULED_NOTIFICATIONS_ENABLED=true to turn it on).');
       return;
     }
-    this.logger.log(`App reminder SMS: ${this.enabled ? `on (Sundays 8:00 AM IST, ${this.perRun} per week)` : 'OFF (APP_REMINDER_SMS_ENABLED=false)'}.`);
+    this.logger.log(`App reminder SMS: ${this.enabled ? `on (${this.days.length} day(s) a week, ${String(Math.floor(this.timeMin / 60)).padStart(2, '0')}:${String(this.timeMin % 60).padStart(2, '0')} IST, ${this.perRun} per run)` : 'OFF (APP_REMINDER_SMS_ENABLED=false)'}.`);
     this.timer = setInterval(() => this.tick().catch((e) => this.logger.error(e.message)), 60_000);
   }
 
@@ -103,7 +135,7 @@ export class AppReminderSmsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async tick(now: Date = new Date()) {
-    if (!this.enabled || !isAppReminderDue(now)) return;
+    if (!this.enabled || !isAppReminderDue(now, this.days, this.timeMin)) return;
     const day = istDay(now);
     if (this.lastRunDay === day) return;
     this.lastRunDay = day;
@@ -151,13 +183,13 @@ export class AppReminderSmsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * One Sunday: pick the next customers in the queue (never reminded first, then the longest waiting) who are due,
+   * One weekend run: pick the next customers in the queue (never reminded first, then the longest waiting) who are due,
    * send, and log each attempt.
    */
   async run({ dryRun = false, now = new Date() }: { dryRun?: boolean; now?: Date } = {}) {
     const today = istDay(now);
     const eligible = await this.audience(now);
-    const { weeks, nextOn } = nextRound(eligible.length, this.perRun, today);
+    const { weeks, nextOn } = nextRound(eligible.length, this.perRun * this.days.length, today);
     const last = await this.lastSent(eligible.map((c) => c.id));
 
     const due = eligible

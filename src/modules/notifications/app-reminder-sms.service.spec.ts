@@ -1,7 +1,7 @@
 jest.mock('expo-server-sdk', () => ({ Expo: class {} }));
 
 import {
-  AppReminderSmsService, APP_REMINDER_TEMPLATE, appReminderMessage, indianMobile, isAppReminderDue, nextRound, smsName,
+  AppReminderSmsService, APP_REMINDER_TEMPLATE, appReminderMessage, indianMobile, isAppReminderDue, nextRound, parseReminderDays, parseReminderTime, smsName,
 } from './app-reminder-sms.service';
 
 const ist = (s: string) => new Date(`${s}:00+05:30`); // 2026-11-15 is a Sunday
@@ -31,12 +31,25 @@ describe('App reminder SMS - text and numbers', () => {
 });
 
 describe('App reminder SMS - schedule and round', () => {
-  it('is due only on Sunday 8:00 - 8:09 AM IST', () => {
-    expect(isAppReminderDue(ist('2026-11-15T08:00'))).toBe(true);
-    expect(isAppReminderDue(ist('2026-11-15T08:09'))).toBe(true);
-    expect(isAppReminderDue(ist('2026-11-15T08:10'))).toBe(false);
-    expect(isAppReminderDue(ist('2026-11-15T07:59'))).toBe(false);
-    expect(isAppReminderDue(ist('2026-11-16T08:00'))).toBe(false); // Monday
+  it('is due only on Sunday 10:30 - 10:39 AM IST by default', () => {
+    expect(isAppReminderDue(ist('2026-11-15T10:30'))).toBe(true);
+    expect(isAppReminderDue(ist('2026-11-15T10:39'))).toBe(true);
+    expect(isAppReminderDue(ist('2026-11-15T10:40'))).toBe(false);
+    expect(isAppReminderDue(ist('2026-11-15T10:29'))).toBe(false);
+    expect(isAppReminderDue(ist('2026-11-15T08:00'))).toBe(false); // the old time
+    expect(isAppReminderDue(ist('2026-11-16T10:30'))).toBe(false); // Monday
+  });
+
+  it('weekend day(s) and time come from the env settings', () => {
+    expect(parseReminderDays('SAT,SUN')).toEqual([6, 0]);
+    expect(parseReminderDays('saturday')).toEqual([6]);
+    expect(parseReminderDays('')).toEqual([0]);
+    expect(parseReminderTime('9:05')).toBe(545);
+    expect(parseReminderTime('bad')).toBe(630);
+    const weekend = parseReminderDays('SAT,SUN');
+    expect(isAppReminderDue(ist('2026-11-14T10:30'), weekend, 630)).toBe(true); // Saturday
+    expect(isAppReminderDue(ist('2026-11-15T10:30'), weekend, 630)).toBe(true); // Sunday
+    expect(isAppReminderDue(ist('2026-11-14T10:30'), [0], 630)).toBe(false);
   });
 
   it('800 eligible, 50 per run = 16 weeks, due again 7 March 2027', () => {
@@ -79,7 +92,7 @@ function make(opts: { users?: any[]; sendOk?: boolean | ((n: string) => boolean)
 const user = (id: string, phone: string | null, name = 'Hasar', created = 0) => ({ id, name, phone, createdAt: new Date(2026, 0, 1 + created) });
 const phone = (n: number) => `+9198765${String(10000 + n).slice(-5)}`;
 const crowd = (n: number) => Array.from({ length: n }, (_, i) => user(`u${String(i).padStart(3, '0')}`, phone(i), `Customer ${i}`, i));
-const sunday = ist('2026-11-15T08:00');
+const sunday = ist('2026-11-15T10:30');
 const sundayAfter = (weeks: number) => new Date(sunday.getTime() + weeks * 7 * 86_400_000);
 
 describe('App reminder SMS - who is eligible', () => {
@@ -180,13 +193,13 @@ describe('App reminder SMS - 50 per Sunday rotation', () => {
 });
 
 describe('App reminder SMS - tick', () => {
-  it('runs once on Sunday 8 AM, not at other times, and not when switched off', async () => {
+  it('runs once on Sunday 10:30 AM, not at other times, and not when switched off', async () => {
     const a = make({ users: [user('u1', '+918072535572')] });
     await a.svc.tick(sunday);
-    await a.svc.tick(ist('2026-11-15T08:01'));
+    await a.svc.tick(ist('2026-11-15T10:31'));
     expect(a.sms).toHaveLength(1);
     const b = make({ users: [user('u1', '+918072535572')] });
-    await b.svc.tick(ist('2026-11-16T08:00'));
+    await b.svc.tick(ist('2026-11-16T10:30'));
     expect(b.sms).toHaveLength(0);
     const c = make({ users: [user('u1', '+918072535572')], flags: { APP_REMINDER_SMS_ENABLED: 'false' } });
     await c.svc.tick(sunday);

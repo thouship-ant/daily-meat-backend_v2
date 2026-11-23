@@ -7,6 +7,7 @@ import { AdminApiModule } from './api/admin/admin-api.module';
 import { CustomerApiModule } from './api/customer/customer-api.module';
 import { DriverApiModule } from './api/driver/driver-api.module';
 import { PublicController } from './api/shared/public.controller';
+import { SyncController } from './api/shared/sync.controller';
 import { WebhooksApiModule } from './api/webhooks/payments-webhook.controller';
 import { ApiException, ErrorCode } from './common/api-error';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -60,7 +61,7 @@ function flatten(errors: ValidationError[], parent = ''): Array<{ field: string;
       { path: 'driver', module: DriverApiModule },
     ]),
   ],
-  controllers: [PublicController],
+  controllers: [PublicController, SyncController],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },

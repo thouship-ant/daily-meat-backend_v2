@@ -6,6 +6,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { HubsService } from '../hubs/hubs.service';
 import { UsersService } from '../users/users.service';
 import { PushService } from './push.service';
+import { istWeekday, normalizeWeekdays, runsOn, weekdaysLabel, weekdaysToString } from './weekdays';
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -21,6 +22,7 @@ export interface PlanInput {
   endDate?: string;
   windowStart?: string;
   windowEnd?: string;
+  weekdays?: string[];
   isActive?: boolean;
   hubId?: number | null;
 }
@@ -87,23 +89,25 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
   async audienceTokens(target: string = 'ALL', inactiveDays?: number, hubId?: number | null) {
     const scope = await this.hubs.customerScope(hubId);
     const cutoff = new Date(Date.now() - (Number(inactiveDays) || 14) * 86_400_000);
+    const base = {
+      role: 'CUSTOMER' as const,
+      isActive: true,
+      promotionalNotifications: true,
+      OR: [{ phone: null }, { phone: { not: { startsWith: 'del_' } } }],
+      ...(target === 'INACTIVE' ? { orders: { none: { createdAt: { gte: cutoff } } } } : {}),
+      ...(scope ? { AND: [scope] } : {}),
+    };
     const customers = await this.prisma.user.findMany({
-      where: {
-        role: 'CUSTOMER',
-        isActive: true,
-        promotionalNotifications: true,
-        pushToken: { not: null },
-        OR: [{ phone: null }, { phone: { not: { startsWith: 'del_' } } }],
-        ...(target === 'INACTIVE' ? { orders: { none: { createdAt: { gte: cutoff } } } } : {}),
-        ...(scope ? { AND: [scope] } : {}),
-      },
+      where: { ...base, pushToken: { not: null } },
       select: { pushToken: true },
     });
+    // customers who would get it but have no registered device (app not opened since signing in, token removed, signed out)
+    const withoutDevice = await this.prisma.user.count({ where: { ...base, OR: undefined, AND: [...(scope ? [scope] : []), { OR: [{ pushToken: null }, { pushToken: '' }] }, { OR: base.OR }] } });
     const tokens = new Set<string>();
     for (const c of customers) {
       for (const t of String(c.pushToken ?? '').split(',').map((x) => x.trim())) if (t) tokens.add(t);
     }
-    return { customers: customers.length, tokens: [...tokens] };
+    return { customers: customers.length, tokens: [...tokens], withoutDevice };
   }
 
   /** Counts the audience, answers straight away and sends in the background (many Expo requests). */
@@ -114,15 +118,25 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       return { message: 'Marketing push notifications are turned off, so nothing was sent.', enabled: false, devices: 0, customers: 0 };
     }
     const target = input.target === 'INACTIVE' ? 'INACTIVE' : 'ALL';
-    const { tokens, customers } = await this.audienceTokens(target, input.inactiveDays, input.hubId);
+    const { tokens, customers, withoutDevice } = await this.audienceTokens(target, input.inactiveDays, input.hubId);
     if (!tokens.length) {
-      return { message: 'No customers with a registered device matched, so nothing was sent.', devices: 0, customers };
+      return { message: 'No customers with a registered device matched, so nothing was sent.', devices: 0, customers, withoutDevice };
     }
     this.push
-      .send(tokens, { title: input.title, body: input.body, data: { route: 'home', type: 'MARKETING' } })
-      .then(() => this.logger.log(`Broadcast "${input.title}" sent to ${tokens.length} devices (${customers} customers).`))
+      .sendWithReport(tokens, { title: input.title, body: input.body, data: { route: 'home', type: 'MARKETING' } })
+      .then((r) =>
+        this.logger.log(
+          `Broadcast "${input.title}": ${customers} customers, ${r.tokens} device tokens, ${r.accepted} accepted by Expo, ${r.failed} refused ` +
+            `${JSON.stringify(r.errors)}, ${r.invalid} not valid Expo tokens.`,
+        ),
+      )
       .catch((e) => this.logger.error(`Broadcast failed: ${e.message}`));
-    return { message: `Broadcast is being sent to ${tokens.length} devices of ${customers} customers.`, devices: tokens.length, customers };
+    return {
+      message: `Broadcast is being sent to ${tokens.length} devices of ${customers} customers.` + (withoutDevice ? ` ${withoutDevice} more customers have no registered device and cannot be reached.` : ''),
+      devices: tokens.length,
+      customers,
+      withoutDevice,
+    };
   }
 
   /** Preview: the admins' devices only. */
@@ -138,7 +152,11 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     return {
       id: p.id, name: p.name, title: p.title, body: p.body, audience: p.audience, inactiveDays: p.inactiveDays,
       startDate: ymd(p.startDate), endDate: ymd(p.endDate), windowStart: p.windowStart, windowEnd: p.windowEnd,
+      weekdays: normalizeWeekdays(p.weekdays), weekdaysLabel: weekdaysLabel(p.weekdays),
       isActive: p.isActive, hubId: p.hubId, lastSentOn: p.lastSentOn ? ymd(p.lastSentOn) : null, lastSentCount: p.lastSentCount,
+      // how the last send went: reached Expo / rejected by Expo (with reasons) / not sent / customers with no device
+      lastCustomers: p.lastCustomers, lastAccepted: p.lastAccepted, lastRejected: p.lastRejected, lastInvalid: p.lastInvalid,
+      lastNoDevice: p.lastNoDevice, lastErrors: Array.isArray(p.lastErrors) ? p.lastErrors : [],
     };
   }
 
@@ -163,6 +181,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       if (p[f] !== undefined) out[f] = p[f];
     }
     if (p.hubId !== undefined) out.hubId = p.hubId;
+    if (p.weekdays !== undefined) out.weekdays = weekdaysToString(p.weekdays);
     if (p.audience !== undefined) out.audience = p.audience === 'INACTIVE' ? 'INACTIVE' : 'ALL';
     if (p.startDate) out.startDate = new Date(`${p.startDate}T00:00:00.000Z`);
     if (p.endDate) out.endDate = new Date(`${p.endDate}T00:00:00.000Z`);
@@ -190,7 +209,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     this.validate({ ...this.present(current), ...patch } as PlanInput, false);
     const data = this.data(patch);
     // moving the dates / time range / text makes the plan eligible again today
-    if (['startDate', 'endDate', 'windowStart', 'windowEnd', 'title', 'body'].some((k) => data[k] !== undefined)) data.lastSentOn = null;
+    if (['startDate', 'endDate', 'windowStart', 'windowEnd', 'weekdays', 'title', 'body'].some((k) => data[k] !== undefined)) data.lastSentOn = null;
     return this.present(await this.prisma.scheduledNotification.update({ where: { id }, data }));
   }
 
@@ -216,7 +235,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const plans = await this.prisma.scheduledNotification.findMany({
       where: { isActive: true, startDate: { lte: day }, endDate: { gte: day }, OR: [{ lastSentOn: null }, { lastSentOn: { not: day } }] },
     });
+    const weekday = istWeekday(now);
     for (const plan of plans) {
+      if (!runsOn(plan.weekdays, weekday)) continue; // not one of this plan's days
       const at = sendMinuteFor(plan, today);
       if (!(minuteNow >= at && minuteNow < Math.max(toMinutes(plan.windowEnd), at + 1))) continue;
       // claim today's send first: if another instance did, nothing changes and we skip
@@ -226,12 +247,24 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       });
       if (!claimed.count) continue;
       try {
-        const { tokens, customers } = await this.audienceTokens(plan.audience, plan.inactiveDays ?? undefined, plan.hubId);
+        const { tokens, customers, withoutDevice } = await this.audienceTokens(plan.audience, plan.inactiveDays ?? undefined, plan.hubId);
+        let r = { tokens: 0, invalid: 0, accepted: 0, failed: 0, errors: {} as Record<string, number> };
         if (tokens.length) {
-          await this.push.send(tokens, { title: plan.title, body: plan.body, data: { route: 'home', type: 'SCHEDULED', planId: plan.id } });
+          r = await this.push.sendWithReport(tokens, { title: plan.title, body: plan.body, data: { route: 'home', type: 'SCHEDULED', planId: plan.id } });
+          this.logger.log(`Scheduled "${plan.name}": ${customers} customers, ${r.tokens} tokens, ${r.accepted} accepted by Expo, ${r.failed} refused ${JSON.stringify(r.errors)}, ${r.invalid} invalid, ${withoutDevice} without a device.`);
         }
-        await this.prisma.scheduledNotification.update({ where: { id: plan.id }, data: { lastSentCount: tokens.length } });
-        this.logger.log(`Scheduled "${plan.name}" sent to ${tokens.length} devices (${customers} customers).`);
+        await this.prisma.scheduledNotification.update({
+          where: { id: plan.id },
+          data: {
+            lastSentCount: tokens.length,
+            lastCustomers: customers,
+            lastAccepted: r.accepted,
+            lastRejected: r.failed,
+            lastInvalid: r.invalid,
+            lastNoDevice: withoutDevice,
+            lastErrors: Object.entries(r.errors).map(([reason, count]) => ({ reason, count })),
+          },
+        });
       } catch (e) {
         this.logger.error(`Scheduled "${plan.name}" failed: ${(e as Error).message}`);
       }

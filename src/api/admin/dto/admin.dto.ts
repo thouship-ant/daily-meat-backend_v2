@@ -157,6 +157,8 @@ export class ScheduledPlanDto {
   @ApiPropertyOptional({ example: '2026-11-12' }) @IsOptional() @IsString() endDate?: string;
   @ApiPropertyOptional({ example: '10:00' }) @IsOptional() @IsString() windowStart?: string;
   @ApiPropertyOptional({ example: '11:00' }) @IsOptional() @IsString() windowEnd?: string;
+  @ApiPropertyOptional({ isArray: true, enum: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'], description: 'Days of the week (IST) it runs on; omit or empty = every day' })
+  @IsOptional() @IsArray() @IsIn(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'], { each: true }) weekdays?: string[];
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
   @ApiPropertyOptional({ description: 'Only the customers of this hub (omit for all hubs)' }) @IsOptional() @Type(() => Number) @IsInt() hubId?: number | null;
 }
@@ -168,6 +170,8 @@ export class CreateDriverDto {
   @ApiProperty({ example: '+919876543210' }) @Transform(trim) @IsString() @Length(8, 20) phone: string;
   @ApiProperty({ minLength: 8 }) @IsString() @MinLength(8) @MaxLength(128) password: string;
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsEmail() email?: string;
+  @ApiPropertyOptional({ description: 'true = create the account already approved, without the KYC / deposit onboarding. Default false: the driver completes KYC in the app first.' })
+  @IsOptional() @IsBoolean() skipKyc?: boolean;
 }
 
 export class DriverApplicationsQueryDto extends PaginationDto {

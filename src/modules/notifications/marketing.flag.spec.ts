@@ -4,8 +4,11 @@ import { MarketingService } from './marketing.service';
 
 function make(flag: unknown) {
   const sent: any[] = [];
-  const prisma: any = { user: { findMany: async () => [{ pushToken: 'ExponentPushToken[a]' }] } };
-  const push: any = { send: async (...a: any[]) => { sent.push(a); } };
+  const prisma: any = { user: { findMany: async () => [{ pushToken: 'ExponentPushToken[a]' }], count: async () => 0 } };
+  const push: any = {
+    send: async (...a: any[]) => { sent.push(a); },
+    sendWithReport: async (...a: any[]) => { sent.push(a); return { tokens: 1, invalid: 0, accepted: 1, failed: 0, errors: {} }; },
+  };
   const hubs: any = { customerScope: async () => undefined };
   const config: any = { get: (k: string) => (k === 'MARKETING_PUSH_ENABLED' ? flag : undefined) };
   return { svc: new MarketingService(prisma, push, {} as any, hubs, config), sent };

@@ -14,6 +14,15 @@ export interface PushPayload {
   kind?: string;
 }
 
+/** What happened to one batch of pushes: how many tokens were usable, how many Expo accepted, and why the others failed. */
+export interface PushReport {
+  tokens: number; // tokens given
+  invalid: number; // not Expo push tokens (never sent)
+  accepted: number; // Expo accepted them for delivery
+  failed: number; // Expo refused them (see errors)
+  errors: Record<string, number>; // e.g. { DeviceNotRegistered: 3, MessageRateExceeded: 1 }
+}
+
 /** Sends Expo push notifications and cleans up tokens Expo says are dead. */
 @Injectable()
 export class PushService {
@@ -29,8 +38,17 @@ export class PushService {
   }
 
   async send(tokens: string[], payload: PushPayload): Promise<number> {
-    const unique = [...new Set(tokens)].filter((t) => Expo.isExpoPushToken(t));
-    if (!unique.length) return 0;
+    const report = await this.sendWithReport(tokens, payload);
+    return report.accepted + report.failed;
+  }
+
+  /** Same as send, but says what Expo did with every token (so a broadcast that "did not arrive" can be explained). */
+  async sendWithReport(tokens: string[], payload: PushPayload): Promise<PushReport> {
+    const all = [...new Set(tokens)];
+    const unique = all.filter((t) => Expo.isExpoPushToken(t));
+    const report: PushReport = { tokens: all.length, invalid: all.length - unique.length, accepted: 0, failed: 0, errors: {} };
+    if (report.invalid) this.logger.warn(`${report.invalid} of ${all.length} push tokens are not valid Expo tokens and were skipped (e.g. ${String(all.find((t) => !unique.includes(t)) ?? '').slice(0, 24)}).`);
+    if (!unique.length) return report;
     const options = this.alertOptions(payload.kind);
     const messages: ExpoPushMessage[] = unique.map((to) => ({
       to,
@@ -39,8 +57,8 @@ export class PushService {
       body: payload.body,
       data: payload.data ?? {},
     }));
-    await this.dispatch(messages);
-    return messages.length;
+    await this.dispatch(messages, report);
+    return report;
   }
 
   /** A different message per customer (reminders that name a product / price): one push per valid device token. */
@@ -71,15 +89,65 @@ export class PushService {
     return { sound: 'default', priority: 'high', ttl: 3600, ...(channel ? { channelId: channel } : {}) };
   }
 
-  private async dispatch(messages: ExpoPushMessage[]) {
-    for (const chunk of this.expo.chunkPushNotifications(messages)) {
-      try {
-        const tickets = await this.expo.sendPushNotificationsAsync(chunk);
-        this.handleTickets(tickets, chunk);
-      } catch (e) {
-        this.logger.error(`Push chunk failed: ${(e as Error).message}`);
+  private async dispatch(messages: ExpoPushMessage[], report?: PushReport) {
+    for (const chunk of this.expo.chunkPushNotifications(messages)) await this.sendChunk(chunk, report);
+  }
+
+  /**
+   * Expo accepts one request only for tokens of ONE Expo project. A batch that mixes projects (e.g. customers' tokens
+   * from an old build / another app registered under a different project) is refused as a whole, so nobody in it gets
+   * the notification. On that error the batch is split by project (Expo names the groups) and each part is sent on its own.
+   */
+  private async sendChunk(chunk: ExpoPushMessage[], report?: PushReport): Promise<void> {
+    try {
+      const tickets = await this.expo.sendPushNotificationsAsync(chunk);
+      this.handleTickets(tickets, chunk);
+      if (report) {
+        for (const t of tickets) {
+          if (t.status === 'error') {
+            report.failed++;
+            const why = String(t.details?.error ?? 'unknown');
+            report.errors[why] = (report.errors[why] ?? 0) + 1;
+          } else {
+            report.accepted++;
+          }
+        }
+      }
+    } catch (e) {
+      const err = e as { code?: string; message?: string; details?: unknown };
+      if (err.code === 'PUSH_TOO_MANY_EXPERIENCE_IDS' || /same project/i.test(String(err.message))) {
+        const parts = this.splitByProject(chunk, err.details);
+        if (parts.length > 1) {
+          this.logger.warn(`Push batch mixed ${parts.length} Expo projects (${parts.map((p) => p.length).join(' + ')} tokens): sending each project on its own.`);
+          for (const part of parts) await this.sendChunk(part, report);
+          return;
+        }
+      }
+      // the whole chunk was not delivered to Expo (network, bad access token ...): count it as failed
+      this.logger.error(`Push chunk failed: ${err.message}`);
+      if (report) {
+        report.failed += chunk.length;
+        report.errors.CHUNK_FAILED = (report.errors.CHUNK_FAILED ?? 0) + chunk.length;
       }
     }
+  }
+
+  /** Groups of the chunk that belong to one project each: from Expo's error details, else the chunk cut in half. */
+  private splitByProject(chunk: ExpoPushMessage[], details: unknown): ExpoPushMessage[][] {
+    if (details && typeof details === 'object') {
+      const groups = Object.values(details as Record<string, unknown>).filter((g): g is string[] => Array.isArray(g));
+      if (groups.length > 1) {
+        const parts = groups.map((tokens) => chunk.filter((m) => tokens.includes(String(m.to))));
+        const covered = new Set(parts.flat());
+        const rest = chunk.filter((m) => !covered.has(m));
+        if (rest.length) parts.push(rest);
+        const useful = parts.filter((p) => p.length);
+        if (useful.length > 1) return useful;
+      }
+    }
+    if (chunk.length < 2) return [chunk];
+    const mid = Math.ceil(chunk.length / 2);
+    return [chunk.slice(0, mid), chunk.slice(mid)];
   }
 
   private handleTickets(tickets: ExpoPushTicket[], chunk: ExpoPushMessage[]) {

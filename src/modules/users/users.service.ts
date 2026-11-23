@@ -372,7 +372,12 @@ export class UsersService {
     await this.prisma.driverProfile.upsert({ where: { userId }, update: {}, create: { userId } });
   }
 
-  async createDriver(dto: { name: string; phone: string; password: string; email?: string }): Promise<User> {
+  /**
+   * Creates a driver account. By default the driver must complete KYC onboarding in the app before taking orders
+   * (profile left as DRAFT). With skipKyc the account is created already APPROVED, recorded as approved by the admin
+   * without KYC (kyc_method ADMIN_NO_KYC), so the driver can sign in and work straight away.
+   */
+  async createDriver(dto: { name: string; phone: string; password: string; email?: string; skipKyc?: boolean }, adminId?: string): Promise<User> {
     const exists = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
     if (exists) throw ApiException.conflict('A user with this phone number already exists.');
     const driver = await this.create({
@@ -383,7 +388,15 @@ export class UsersService {
       role: 'DRIVER',
       isProfileCompleted: true,
     });
-    await this.ensureDriverProfile(driver.id);
+    if (dto.skipKyc) {
+      await this.prisma.driverProfile.upsert({
+        where: { userId: driver.id },
+        update: {},
+        create: { userId: driver.id, status: 'APPROVED', kycMethod: 'ADMIN_NO_KYC', reviewedAt: new Date(), reviewedById: adminId ?? null },
+      });
+    } else {
+      await this.ensureDriverProfile(driver.id);
+    }
     return driver;
   }
 

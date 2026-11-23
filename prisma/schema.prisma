@@ -564,9 +564,19 @@ model ScheduledNotification {
   endDate       DateTime  @map("end_date") @db.Date
   windowStart   String    @map("window_start") @db.VarChar(5)
   windowEnd     String    @map("window_end") @db.VarChar(5)
+  /// days of the week it runs, e.g. "FRI" or "SAT,SUN" (IST); empty = every day
+  weekdays      String    @default("") @db.VarChar(30)
   isActive      Boolean   @default(true) @map("is_active")
   lastSentOn    DateTime? @map("last_sent_on") @db.Date
   lastSentCount Int?      @map("last_sent_count")
+  /// how the last send went (what Expo did with it), so the admin can see who was not reached
+  lastCustomers Int?      @map("last_customers")
+  lastAccepted  Int?      @map("last_accepted")
+  lastRejected  Int?      @map("last_rejected")
+  lastInvalid   Int?      @map("last_invalid")
+  lastNoDevice  Int?      @map("last_no_device")
+  /// reasons Expo gave for the rejected ones, e.g. [{"reason":"DeviceNotRegistered","count":12}]
+  lastErrors    Json?     @map("last_errors")
   hubId         Int?      @map("hub_id")
   createdAt     DateTime  @default(now()) @map("createdAt") @db.Timestamptz(6)
   updatedAt     DateTime  @updatedAt @map("updatedAt") @db.Timestamptz(6)

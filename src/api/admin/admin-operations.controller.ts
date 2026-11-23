@@ -357,8 +357,8 @@ export class AdminDriversController {
 
   @Post()
   @ResponseMessage('Driver created.')
-  async create(@Body() dto: CreateDriverDto) {
-    return toUserView(await this.users.createDriver(dto));
+  async create(@Body() dto: CreateDriverDto, @CurrentUser('id') adminId: string) {
+    return toUserView(await this.users.createDriver(dto, adminId));
   }
 
   @Get()

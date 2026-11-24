@@ -168,10 +168,9 @@ export class ScheduledPlanDto {
 export class CreateDriverDto {
   @ApiProperty() @Transform(trim) @IsString() @Length(1, 100) name: string;
   @ApiProperty({ example: '+919876543210' }) @Transform(trim) @IsString() @Length(8, 20) phone: string;
-  @ApiProperty({ minLength: 8 }) @IsString() @MinLength(8) @MaxLength(128) password: string;
+  @ApiPropertyOptional({ minLength: 8, description: 'Omit to use the starting password from STAFF_DRIVER_DEFAULT_PASSWORD' })
+  @IsOptional() @IsString() @MinLength(8) @MaxLength(128) password?: string;
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsEmail() email?: string;
-  @ApiPropertyOptional({ description: 'true = create the account already approved, without the KYC / deposit onboarding. Default false: the driver completes KYC in the app first.' })
-  @IsOptional() @IsBoolean() skipKyc?: boolean;
 }
 
 export class DriverApplicationsQueryDto extends PaginationDto {

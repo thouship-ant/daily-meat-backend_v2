@@ -6,6 +6,7 @@ import { ApiException } from '../../common/api-error';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { UsersService } from './users.service';
 import { toUserView, UserView } from './user.mapper';
+import { DEFAULT_ADMIN_PASSWORD, DEFAULT_DRIVER_PASSWORD } from './default-passwords';
 
 export type StaffRole = 'ADMIN' | 'DRIVER' | 'CUSTOMER';
 const ROLE_PRIORITY: StaffRole[] = ['ADMIN', 'DRIVER', 'CUSTOMER']; // the first one a number has becomes its primary role
@@ -21,8 +22,8 @@ export class StaffService {
 
   /** Password a reset sets (an empty setting counts as not set, so it can never become an empty password): Admin accounts and Driver accounts have their own. Customers have none. */
   passwordFor(role: Role): string | null {
-    if (role === 'ADMIN' || role === 'SUPERADMIN') return this.config.get<string>('STAFF_ADMIN_DEFAULT_PASSWORD') || 'DAS@3781';
-    if (role === 'DRIVER') return this.config.get<string>('STAFF_DRIVER_DEFAULT_PASSWORD') || 'Dvr@7939';
+    if (role === 'ADMIN' || role === 'SUPERADMIN') return this.config.get<string>('STAFF_ADMIN_DEFAULT_PASSWORD') || DEFAULT_ADMIN_PASSWORD;
+    if (role === 'DRIVER') return this.config.get<string>('STAFF_DRIVER_DEFAULT_PASSWORD') || DEFAULT_DRIVER_PASSWORD;
     return null;
   }
 

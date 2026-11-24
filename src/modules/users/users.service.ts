@@ -7,6 +7,7 @@ import { AuthUser } from '../../common/decorators';
 import { CacheService } from '../../infrastructure/cache/cache.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { NOT_DELETED_ACCOUNT } from './user.mapper';
+import { DEFAULT_DRIVER_PASSWORD } from './default-passwords';
 
 const AUTH_CACHE_TTL = 30; // seconds
 const authKey = (id: string) => `auth:user:${id}`;
@@ -373,30 +374,21 @@ export class UsersService {
   }
 
   /**
-   * Creates a driver account. By default the driver must complete KYC onboarding in the app before taking orders
-   * (profile left as DRAFT). With skipKyc the account is created already APPROVED, recorded as approved by the admin
-   * without KYC (kyc_method ADMIN_NO_KYC), so the driver can sign in and work straight away.
+   * Creates a driver account. The driver completes KYC onboarding in the app before taking orders (profile left as DRAFT).
+   * Without a password the starting password is STAFF_DRIVER_DEFAULT_PASSWORD (the same one a password reset uses).
    */
-  async createDriver(dto: { name: string; phone: string; password: string; email?: string; skipKyc?: boolean }, adminId?: string): Promise<User> {
+  async createDriver(dto: { name: string; phone: string; password?: string; email?: string }, _adminId?: string): Promise<User> {
     const exists = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
     if (exists) throw ApiException.conflict('A user with this phone number already exists.');
     const driver = await this.create({
       name: dto.name,
       phone: dto.phone,
       email: dto.email ? dto.email.toLowerCase() : null,
-      password: await bcrypt.hash(dto.password, 10),
+      password: await bcrypt.hash(dto.password || this.config.get<string>('STAFF_DRIVER_DEFAULT_PASSWORD') || DEFAULT_DRIVER_PASSWORD, 10),
       role: 'DRIVER',
       isProfileCompleted: true,
     });
-    if (dto.skipKyc) {
-      await this.prisma.driverProfile.upsert({
-        where: { userId: driver.id },
-        update: {},
-        create: { userId: driver.id, status: 'APPROVED', kycMethod: 'ADMIN_NO_KYC', reviewedAt: new Date(), reviewedById: adminId ?? null },
-      });
-    } else {
-      await this.ensureDriverProfile(driver.id);
-    }
+    await this.ensureDriverProfile(driver.id);
     return driver;
   }
 

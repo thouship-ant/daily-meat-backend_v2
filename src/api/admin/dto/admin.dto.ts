@@ -48,6 +48,8 @@ export class AdminOrdersQueryDto extends PaginationDto {
   @ApiPropertyOptional({ example: '2026-11-01' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) startDate?: string;
   @ApiPropertyOptional({ example: '2026-11-08' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) endDate?: string;
   @ApiPropertyOptional({ description: 'Order id, customer name or phone' }) @IsOptional() @Transform(trim) @IsString() @MaxLength(60) q?: string;
+  @ApiPropertyOptional({ description: 'true = only online orders waiting for payment; false = leave them out' }) @IsOptional() @Transform(toBool) @IsBoolean() paymentPending?: boolean;
+  @ApiPropertyOptional({ description: 'Only orders scheduled for tomorrow (IST) or later' }) @IsOptional() @Transform(toBool) @IsBoolean() upcoming?: boolean;
 }
 
 export class UpdateOrderStatusDto {

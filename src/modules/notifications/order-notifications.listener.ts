@@ -208,6 +208,7 @@ export class OrderNotificationsListener {
         title: 'Delivery Reassigned',
         body: `${count} order(s) were moved to another driver and removed from your route.`,
         data: { route: 'driver_active_orders' },
+        event: 'driverOrderStatusChanged', // the old driver's open screens drop the orders at once (no polling)
       });
     }
     for (const o of orders) this.notifications.orderStatus({ id: o.id, userId: o.userId, status: 'ASSIGNED' });

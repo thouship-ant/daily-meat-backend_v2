@@ -19,6 +19,10 @@ export interface AdminOrderFilter {
   startDate?: string;
   endDate?: string;
   q?: string;
+  /** true = only online orders still waiting for payment; false = leave them out */
+  paymentPending?: boolean;
+  /** only orders scheduled for tomorrow (IST) or later */
+  upcoming?: boolean;
   skip: number;
   take: number;
 }
@@ -80,7 +84,8 @@ export class OrderQueryService {
   // Admin
   // =====================================================================
 
-  async listForAdmin(f: AdminOrderFilter) {
+  /** The filters of the admin list as one where clause (`withStatus` false = leave the status out, for the counts) */
+  private adminWhere(f: Omit<AdminOrderFilter, 'skip' | 'take'>, withStatus = true): Prisma.OrderWhereInput {
     const and: Prisma.OrderWhereInput[] = [ADMIN_VISIBLE];
     const range = istRange(f.startDate && f.endDate ? 'custom' : f.period, f.startDate, f.endDate);
     if (range) and.push(this.statusAwareDate(range));
@@ -94,12 +99,19 @@ export class OrderQueryService {
         ],
       });
     }
-    const where: Prisma.OrderWhereInput = {
+    if (f.paymentPending === true) and.push({ status: 'PENDING', paymentMethod: 'ONLINE', paymentStatus: 'PENDING' });
+    if (f.paymentPending === false) and.push({ NOT: { status: 'PENDING', paymentMethod: 'ONLINE', paymentStatus: 'PENDING' } });
+    if (f.upcoming) and.push({ deliveryDate: { gte: asDate(istDateString(new Date(Date.now() + 24 * 3600_000))) } });
+    return {
       AND: and,
-      ...(f.statuses?.length ? { status: { in: f.statuses } } : f.status ? { status: f.status } : {}),
+      ...(withStatus ? (f.statuses?.length ? { status: { in: f.statuses } } : f.status ? { status: f.status } : {}) : {}),
       ...(f.hubId ? { hubId: f.hubId } : {}),
       ...(f.driverId ? { driverId: f.driverId } : {}),
     };
+  }
+
+  async listForAdmin(f: AdminOrderFilter) {
+    const where = this.adminWhere(f);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.order.findMany({
         where,
@@ -111,6 +123,40 @@ export class OrderQueryService {
       this.prisma.order.count({ where }),
     ]);
     return { items, total };
+  }
+
+  /**
+   * Numbers for the status chips of the admin list: how many orders per status (and per hub) match the date range,
+   * search and hub - whatever the status or tab. Online orders waiting for payment are counted on their own.
+   */
+  async adminCounts(f: Omit<AdminOrderFilter, 'skip' | 'take' | 'statuses' | 'status'>) {
+    const base = this.adminWhere({ ...f, hubId: undefined, paymentPending: undefined, upcoming: undefined }, false);
+    const withHub = this.adminWhere({ ...f, paymentPending: undefined, upcoming: undefined }, false);
+    const payWhere = (extra: Prisma.OrderWhereInput): Prisma.OrderWhereInput => ({ AND: [withHub, extra] });
+    const [byStatus, paymentPending, upcoming, byHub] = await this.prisma.$transaction([
+      this.prisma.order.groupBy({ by: ['status'], where: withHub, _count: { _all: true }, orderBy: { status: 'asc' } }),
+      this.prisma.order.count({ where: payWhere({ status: 'PENDING', paymentMethod: 'ONLINE', paymentStatus: 'PENDING' }) }),
+      this.prisma.order.count({
+        where: payWhere({
+          status: { notIn: ['DELIVERED', 'FAILED', 'CANCELLED'] },
+          deliveryDate: { gte: asDate(istDateString(new Date(Date.now() + 24 * 3600_000))) },
+        }),
+      }),
+      this.prisma.order.groupBy({ by: ['hubId'], where: base, _count: { _all: true }, orderBy: { hubId: 'asc' } }),
+    ]);
+    const hubs = await this.prisma.hub.findMany({ where: { id: { in: byHub.map((h) => h.hubId).filter((x): x is number => x != null) } }, select: { id: true, name: true } });
+    const counts: Record<string, number> = {};
+    for (const r of byStatus) counts[r.status] = (r._count as { _all: number })._all;
+    // a waiting online order is PENDING in the database but is shown (and counted) apart from real pending orders
+    counts.PENDING = Math.max(0, (counts.PENDING ?? 0) - paymentPending);
+    return {
+      counts,
+      paymentPending,
+      upcoming,
+      hubs: byHub
+        .filter((h) => h.hubId != null)
+        .map((h) => ({ id: h.hubId as number, name: hubs.find((x) => x.id === h.hubId)?.name ?? `Hub ${h.hubId}`, count: (h._count as { _all: number })._all })),
+    };
   }
 
   async getForAdmin(id: string): Promise<OrderWithRelations> {

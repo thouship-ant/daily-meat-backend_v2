@@ -280,6 +280,12 @@ export class AdminOrdersController {
     return new Paginated(items.map((o) => presentOrder(o, ADMIN_VIEW)), total, q.page, q.limit);
   }
 
+  @Get('counts')
+  @ApiOperation({ summary: 'Order counts per status and hub for the same date range / search / hub filters (the list chips)' })
+  counts(@Query() q: AdminOrdersQueryDto) {
+    return this.queries.adminCounts({ hubId: q.hubId, driverId: q.driverId, period: q.period, startDate: q.startDate, endDate: q.endDate, q: q.q });
+  }
+
   @Post()
   @ResponseMessage('Order created.')
   @ApiOperation({ summary: 'Create an order on behalf of a customer (phone orders). Starts as CONFIRMED.' })

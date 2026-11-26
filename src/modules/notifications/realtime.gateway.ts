@@ -106,6 +106,12 @@ export class RealtimeGateway implements OnGatewayInit {
 
   // ---------- server -> clients ----------
 
+  /** An admin changed the catalog: every connected app (customers, staff, drivers) reloads it */
+  @OnEvent(DomainEvents.CatalogChanged)
+  onCatalogChanged() {
+    this.server?.emit('catalogChanged', {});
+  }
+
   toUser(userId: string, event: string, payload: unknown) {
     this.server?.to(Rooms.user(userId)).emit(event, payload);
   }

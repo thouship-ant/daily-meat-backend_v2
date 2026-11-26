@@ -25,8 +25,8 @@ export class CustomerCatalogController {
 
   @Get('products/best-sellers')
   @ApiOperation({ summary: 'Top selling products that are in stock' })
-  bestSellers() {
-    return this.catalog.listBestSellers();
+  bestSellers(@Query('kind') kind?: string) {
+    return this.catalog.listBestSellers(kind === 'MARINADE' ? 'MARINADE' : 'MEAT');
   }
 
   @Get('products/:id')

@@ -1,3 +1,5 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { DomainEvents } from '../../common/events/domain-events';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ApiException } from '../../common/api-error';
@@ -25,6 +27,7 @@ export class CatalogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly events: EventEmitter2,
   ) {}
 
   // =====================================================================
@@ -70,24 +73,28 @@ export class CatalogService {
     return product;
   }
 
-  /** Top 10 by units sold, among products that still have something in stock. */
-  listBestSellers() {
-    return this.cache.wrap(`${CACHE_PREFIX}best-sellers`, 600, async () => {
+  /**
+   * Top 10 by units sold, among products that still have something in stock. For marinades (`kind` MARINADE) cancelled
+   * and failed orders do not count and out-of-stock products are kept, so the checkout can show what customers order most.
+   */
+  listBestSellers(kind: CatalogKind = 'MEAT') {
+    return this.cache.wrap(`${CACHE_PREFIX}best-sellers${kind === 'MEAT' ? '' : ':' + kind}`, 600, async () => {
       const top = await this.prisma.orderItem.groupBy({
         by: ['productId'],
+        where: { product: { category: { kind } }, ...(kind === 'MARINADE' ? { order: { status: { notIn: ['CANCELLED', 'FAILED'] } } } : {}) },
         _sum: { quantity: true },
         orderBy: { _sum: { quantity: 'desc' } },
         take: 20,
       });
       if (!top.length) return [];
       const products = await this.prisma.product.findMany({
-        where: { id: { in: top.map((t) => t.productId) }, isActive: true, category: { kind: 'MEAT' } },
+        where: { id: { in: top.map((t) => t.productId) }, isActive: true, category: { kind } },
         include: { variants: { where: { isActive: true }, select: PUBLIC_VARIANT_SELECT } },
       });
       const byId = new Map(products.map((p) => [p.id, p]));
       return top
         .map((t) => byId.get(t.productId))
-        .filter((p): p is NonNullable<typeof p> => !!p && p.variants.some((v) => v.inStock))
+        .filter((p): p is NonNullable<typeof p> => !!p && (kind === 'MARINADE' || p.variants.some((v) => v.inStock)))
         .slice(0, 10);
     });
   }
@@ -265,7 +272,9 @@ export class CatalogService {
     await this.invalidate();
   }
 
-  private invalidate() {
-    return this.cache.delByPrefix(CACHE_PREFIX);
+  private async invalidate() {
+    await this.cache.delByPrefix(CACHE_PREFIX);
+    await this.cache.delByPrefix('sync:versions'); // the apps' "did anything change?" answer must not be a few seconds old
+    this.events.emit(DomainEvents.CatalogChanged, {}); // connected apps (customers too) reload the catalog without a refresh
   }
 }

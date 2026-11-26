@@ -6,6 +6,8 @@ import { OrderStatus } from '@prisma/client';
  * notifications loosely coupled: nobody imports NotificationsService just to announce that something happened.
  */
 export const DomainEvents = {
+  /** categories / products / variants / banners were changed by an admin: connected apps reload them */
+  CatalogChanged: 'catalog.changed',
   OrderPlaced: 'order.placed',
   OrderPaid: 'order.paid',
   /** a Cash on Delivery order that was already placed got paid online */

@@ -4,7 +4,7 @@ import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { UsersService } from '../users/users.service';
 
 /** Events that must wake the phone up with an alarm-style sound/priority. */
-const ALARM_EVENTS = new Set(['adminNewOrder', 'admin_slot_alert', 'driverAssigned']);
+const ALARM_EVENTS = new Set(['adminNewOrder', 'admin_slot_alert', 'driverAssigned', 'driverOffer']);
 
 export interface PushPayload {
   title: string;

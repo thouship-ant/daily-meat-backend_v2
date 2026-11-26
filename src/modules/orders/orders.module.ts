@@ -4,6 +4,7 @@ import { CouponsModule } from '../coupons/coupons.module';
 import { HubsModule } from '../hubs/hubs.module';
 import { UsersModule } from '../users/users.module';
 import { DeliverySlotsService } from './delivery-slots.service';
+import { DriverDispatchService } from './driver-dispatch.service';
 import { ManualOrderService } from './manual-order.service';
 import { OnlinePayWindowJob } from './online-pay-window.job';
 import { OrderAddressService } from './order-address.service';
@@ -17,7 +18,7 @@ import { OrderQueryService } from './order-query.service';
  */
 @Module({
   imports: [UsersModule, HubsModule, CouponsModule, AddressesModule],
-  providers: [OnlinePayWindowJob, DeliverySlotsService, OrderPlacementService, OrderLifecycleService, OrderQueryService, ManualOrderService, OrderAddressService],
-  exports: [DeliverySlotsService, OrderPlacementService, OrderLifecycleService, OrderQueryService, ManualOrderService, OrderAddressService],
+  providers: [OnlinePayWindowJob, DriverDispatchService, DeliverySlotsService, OrderPlacementService, OrderLifecycleService, OrderQueryService, ManualOrderService, OrderAddressService],
+  exports: [DriverDispatchService, DeliverySlotsService, OrderPlacementService, OrderLifecycleService, OrderQueryService, ManualOrderService, OrderAddressService],
 })
 export class OrdersModule {}

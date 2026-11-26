@@ -12,6 +12,7 @@ import { DriverOnboardingModule } from '../../modules/driver-onboarding/driver-o
 import { DriverOnboardingService } from '../../modules/driver-onboarding/driver-onboarding.service';
 import { DriverInterestService } from '../../modules/driver-onboarding/driver-interest.service';
 import { AuthService } from '../../modules/auth/auth.service';
+import { DriverDispatchService } from '../../modules/orders/driver-dispatch.service';
 import { OrderLifecycleService } from '../../modules/orders/order-lifecycle.service';
 import { OrderQueryService } from '../../modules/orders/order-query.service';
 import { OrdersModule } from '../../modules/orders/orders.module';
@@ -22,7 +23,7 @@ import { toUserView } from '../../modules/users/user.mapper';
 import { UsersModule } from '../../modules/users/users.module';
 import { UsersService } from '../../modules/users/users.service';
 import { ChangePasswordDto, LogoutDto, PushTokenDto, RefreshTokenDto, StaffLoginDto } from '../shared/shared.dto';
-import { BulkOrdersDto, ChooseHubDto, DriverInterestDto, FailDeliveryDto, InterestStatusQueryDto, KycDto, LocationDto, VehicleDto } from './dto/driver.dto';
+import { AttendanceDto, OrderLimitDto, BulkOrdersDto, ChooseHubDto, DriverInterestDto, FailDeliveryDto, InterestStatusQueryDto, KycDto, LocationDto, VehicleDto } from './dto/driver.dto';
 
 const DRIVER_VIEW = { navigation: true } as const; // drivers get map links, never cost/profit
 
@@ -191,12 +192,71 @@ export class DriverOrdersController {
     private readonly queries: OrderQueryService,
     private readonly lifecycle: OrderLifecycleService,
     private readonly tracking: TrackingService,
+    private readonly dispatch: DriverDispatchService,
   ) {}
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Today counts and a 7-day delivered graph' })
   dashboard(@CurrentUser('id') driverId: string) {
     return this.queries.driverStats(driverId);
+  }
+
+  // ---- attendance, order limit and offers ----
+  @Get('attendance')
+  @ApiOperation({ summary: "Today's attendance and my order limit per set" })
+  attendance(@CurrentUser('id') driverId: string) {
+    return this.dispatch.getAttendance(driverId);
+  }
+
+  @Put('attendance')
+  @ApiOperation({ summary: 'Give my present (or take it back) for today: the earlier the present, the earlier I am offered orders' })
+  setAttendance(@CurrentUser('id') driverId: string, @Body() dto: AttendanceDto) {
+    return this.dispatch.setPresent(driverId, dto.present, driverId);
+  }
+
+  @Put('attendance/limit')
+  @ApiOperation({ summary: 'Most orders I take in one set' })
+  setLimit(@CurrentUser('id') driverId: string, @Body() dto: OrderLimitDto) {
+    return this.dispatch.setOrderLimit(driverId, dto.orderLimit, driverId);
+  }
+
+  @Get('offers/current')
+  @ApiOperation({ summary: 'The confirmed orders offered to me right now (accept before it runs out)' })
+  async currentOffer(@CurrentUser('id') driverId: string) {
+    const current = await this.dispatch.currentOffer(driverId);
+    if (!current) return { offer: null, orders: [] };
+    return {
+      offer: { id: current.offer.id, setNumber: current.offer.setNumber, expiresAt: current.offer.expiresAt },
+      orders: current.orders.map((o) => presentOrder(o, DRIVER_VIEW)),
+    };
+  }
+
+  @Post('offers/:id/accept')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Accept the offered orders: they are assigned to me' })
+  accept(@CurrentUser('id') driverId: string, @Param('id') id: string) {
+    return this.dispatch.accept(driverId, id);
+  }
+
+  @Post('offers/:id/decline')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Decline the offer: the next present driver gets it' })
+  decline(@CurrentUser('id') driverId: string, @Param('id') id: string) {
+    return this.dispatch.decline(driverId, id);
+  }
+
+  @Get('orders/available')
+  @ApiOperation({ summary: 'Open orders of the running sets that I may pick myself (late present, or nobody in the queue can take them)' })
+  async available(@CurrentUser('id') driverId: string) {
+    const groups = await this.dispatch.available(driverId);
+    return groups.map((g) => ({ setNumber: g.setNumber, capacity: g.capacity, orders: g.orders.map((o) => presentOrder(o, DRIVER_VIEW)) }));
+  }
+
+  @Post('orders/claim')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Pick open orders for myself (up to my limit per set)' })
+  claim(@CurrentUser('id') driverId: string, @Body() dto: BulkOrdersDto) {
+    return this.dispatch.claim(driverId, dto.orderIds);
   }
 
   @Get('orders/active')

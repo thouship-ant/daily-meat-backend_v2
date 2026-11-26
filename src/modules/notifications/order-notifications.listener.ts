@@ -10,6 +10,8 @@ import {
   OrderCancelledEvent,
   OrderPaidEvent,
   OrderPlacedEvent,
+  DriverOfferCreatedEvent,
+  DriverOpenOrdersEvent,
   OrdersAssignedEvent,
   OrderStatusChangedEvent,
   OrderSummary,
@@ -218,6 +220,29 @@ export class OrderNotificationsListener {
       data: { route: 'driver_active_orders', orderIds: orders.map((o) => o.id) },
       event: 'driverAssigned',
     });
+  }
+
+  @OnEvent(DomainEvents.DriverOfferCreated)
+  async onDriverOffer({ driverId, offerId, count, setNumber, expiresAt }: DriverOfferCreatedEvent) {
+    const minutes = Math.max(1, Math.round((expiresAt.getTime() - Date.now()) / 60_000));
+    await this.notifications.toUser(driverId, {
+      title: 'New orders for you',
+      body: `${count} confirmed order(s) for set ${setNumber}. Accept within ${minutes} min or they go to the next driver.`,
+      data: { route: 'driver_offer', offerId },
+      event: 'driverOffer',
+    });
+  }
+
+  @OnEvent(DomainEvents.DriverOpenOrders)
+  async onDriverOpenOrders({ driverIds, setNumber, count }: DriverOpenOrdersEvent) {
+    for (const id of driverIds) {
+      await this.notifications.toUser(id, {
+        title: 'Open orders to pick',
+        body: `${count} confirmed order(s) in set ${setNumber} are open. Open the app to pick them.`,
+        data: { route: 'driver_available' },
+        event: 'driverOpenOrders',
+      });
+    }
   }
 
   @OnEvent(DomainEvents.DriverArrived)

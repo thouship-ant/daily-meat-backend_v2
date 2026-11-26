@@ -148,6 +148,8 @@ model User {
   hub            Hub?                  @relation("DriverHomeHub", fields: [hubId], references: [id], onDelete: SetNull)
   hubAssignments DriverHubAssignment[]
   driverProfile  DriverProfile?
+  attendance     DriverAttendance?
+  orderOffers    OrderOffer[]
   notifications  UserNotification[]
 
   addresses         Address[]
@@ -699,4 +701,45 @@ model UserNotification {
   @@index([userId, createdAt(sort: Desc)], map: "user_notifications_user_created_idx")
   @@index([userId, readAt], map: "user_notifications_user_read_idx")
   @@map("user_notifications")
+}
+
+/// One row per driver: today's attendance (the queue for confirmed orders) and the driver's own order limit per set.
+/// `present` only counts when `attendanceDate` is today (IST), so a new day starts with everybody absent.
+model DriverAttendance {
+  driverId       String    @id @map("driver_id") @db.Uuid
+  present        Boolean   @default(false)
+  attendanceDate DateTime? @map("attendance_date") @db.Date
+  /// when the driver gave their present today: the earlier, the earlier they are offered orders
+  presentAt      DateTime? @map("present_at") @db.Timestamptz(6)
+  /// most orders the driver takes in one set (set 1, set 2 ...); 3 until the driver sets their own
+  orderLimit     Int       @default(3) @map("order_limit")
+  /// who changed this row last (the driver themselves in the app)
+  updatedBy      String?   @map("updated_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("createdAt") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updatedAt") @db.Timestamptz(6)
+
+  driver User @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("driver_attendance")
+}
+
+/// Confirmed orders of one set offered to one driver; the driver accepts, declines, or the offer runs out and the next
+/// present driver gets the orders.
+model OrderOffer {
+  id           String    @id @default(uuid()) @db.Uuid
+  driverId     String    @map("driver_id") @db.Uuid
+  deliveryDate DateTime  @map("delivery_date") @db.Date
+  setNumber    Int       @map("set_number")
+  orderIds     String[]  @map("order_ids")
+  /// OFFERED | ACCEPTED | DECLINED | EXPIRED
+  status       String    @default("OFFERED") @db.VarChar(12)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  respondedAt  DateTime? @map("responded_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("createdAt") @db.Timestamptz(6)
+
+  driver User @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryDate, setNumber, status], map: "order_offers_set_status_idx")
+  @@index([driverId, status], map: "order_offers_driver_status_idx")
+  @@map("order_offers")
 }

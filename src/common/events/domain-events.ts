@@ -16,6 +16,10 @@ export const DomainEvents = {
   CodOnlinePaymentClosed: 'order.cod_online_payment_closed',
   OrderStatusChanged: 'order.status_changed',
   OrdersAssigned: 'orders.assigned',
+  /** confirmed orders of a set were offered to a present driver, who can accept them */
+  DriverOfferCreated: 'driver.offer_created',
+  /** confirmed orders of a set are open for present drivers to pick (nobody in the queue can take them) */
+  DriverOpenOrders: 'driver.open_orders',
   OrderCancelled: 'order.cancelled',
   DriverArrived: 'driver.arrived',
   DriverLocationUpdated: 'driver.location_updated',
@@ -59,6 +63,18 @@ export interface OrderStatusChangedEvent {
   previous: OrderStatus;
   actor: OrderActor;
   reason?: string;
+}
+export interface DriverOpenOrdersEvent {
+  driverIds: string[];
+  setNumber: number;
+  count: number;
+}
+export interface DriverOfferCreatedEvent {
+  driverId: string;
+  offerId: string;
+  count: number;
+  setNumber: number;
+  expiresAt: Date;
 }
 export interface OrdersAssignedEvent {
   driverId: string;

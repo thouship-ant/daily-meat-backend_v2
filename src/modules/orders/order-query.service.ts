@@ -27,12 +27,14 @@ export interface AdminOrderFilter {
   take: number;
 }
 
-/** Orders the admin should see: COD, paid/refunded online, and online orders still waiting for payment. */
+/** Orders the admin should see: COD, paid/refunded online, online orders still waiting for payment, and unpaid online orders the admin cancelled. */
 export const ADMIN_VISIBLE: Prisma.OrderWhereInput = {
   OR: [
     { paymentMethod: { not: 'ONLINE' } },
     { paymentStatus: { in: ['PAID', 'REFUNDED'] } },
     { paymentMethod: 'ONLINE', paymentStatus: 'PENDING', status: 'PENDING' },
+    // an online order the admin cancelled before it was paid (an abandoned payment is marked FAILED instead and stays hidden)
+    { paymentMethod: 'ONLINE', paymentStatus: 'PENDING', status: 'CANCELLED' },
   ],
 };
 

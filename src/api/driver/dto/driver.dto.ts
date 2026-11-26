@@ -1,11 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsEmail, IsInt, IsLatitude, IsLongitude, IsNotEmpty, IsNumber, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEmail, IsInt, Max, Min, IsLatitude, IsLongitude, IsNotEmpty, IsNumber, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export class FailDeliveryDto {
   @ApiProperty({ example: 'Customer not reachable' }) @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(250) reason: string;
+}
+
+export class AttendanceDto {
+  @ApiProperty({ description: 'true = present today, false = not working today' }) @IsBoolean() present: boolean;
+}
+
+export class OrderLimitDto {
+  @ApiProperty({ example: 10, description: 'Most orders the driver takes in one set' }) @Type(() => Number) @IsInt() @Min(1) @Max(50) orderLimit: number;
 }
 
 export class BulkOrdersDto {

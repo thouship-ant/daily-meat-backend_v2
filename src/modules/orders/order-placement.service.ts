@@ -56,6 +56,8 @@ export interface PlacedOrder {
 }
 
 const MAX_SCHEDULE_DAYS = 14;
+const MARINADE_ORDER_FROM_MIN = 18 * 60; // 6 PM IST
+const MARINADE_ORDER_TO_MIN = 22 * 60; // 10 PM IST
 
 /**
  * Places a customer order. Everything money-related is computed on the server from the database:
@@ -82,7 +84,7 @@ export class OrderPlacementService {
     const items = this.mergeItems(input.items);
     if (!items.length) throw ApiException.badRequest(ErrorCode.EMPTY_ORDER, 'Order must contain at least one item.');
 
-    const { hub, slot, deliveryDate, pin } = await this.prepare(user.id, input);
+    const { hub, slot, deliveryDate, pin } = await this.prepare(user.id, input, await this.basketKind(items));
 
     // ---- 2. place it atomically (retry on the rare order-id collision) ----
     const created = await this.withOrderIdRetry(() =>
@@ -186,7 +188,7 @@ export class OrderPlacementService {
     const paymentMethod = input.paymentMethod ?? 'COD';
     const items = this.mergeItems(input.items);
     if (!items.length) throw ApiException.badRequest(ErrorCode.EMPTY_ORDER, 'Order must contain at least one item.');
-    const { hub, slot, deliveryDate, pin } = await this.prepare(user.id, input);
+    const { hub, slot, deliveryDate, pin } = await this.prepare(user.id, input, await this.basketKind(items));
     const p = await this.price(this.prisma, user.id, items, hub, pin, input, paymentMethod, false);
     return {
       hubId: hub.id,
@@ -216,7 +218,7 @@ export class OrderPlacementService {
   }
 
   /** Checks where/when the order can be delivered (hub, pause, slot, date, opening hours). Throws coded errors. */
-  private async prepare(userId: string, input: PlaceOrderInput) {
+  private async prepare(userId: string, input: PlaceOrderInput, kind: 'MEAT' | 'MARINADE' = 'MEAT') {
     const hub = await this.hubs.findForPincode(input.address.pincode);
     if (!hub) {
       throw ApiException.badRequest(
@@ -231,8 +233,27 @@ export class OrderPlacementService {
       );
     }
 
-    const slot = input.deliverySlotId ? await this.slots.getActive(input.deliverySlotId) : null;
-    const deliveryDate = this.validateDeliveryDate(input.deliveryDate);
+    let slot = input.deliverySlotId ? await this.slots.getActive(input.deliverySlotId) : null;
+    let deliveryDate = this.validateDeliveryDate(input.deliveryDate);
+
+    if (kind === 'MARINADE') {
+      // Marinades: ordered every evening 6 PM - 10 PM, delivered the next day (10:30 AM - 12:30 PM slot)
+      const now = istMinutesNow();
+      if (now < MARINADE_ORDER_FROM_MIN || now >= MARINADE_ORDER_TO_MIN) {
+        throw ApiException.badRequest(ErrorCode.STORE_CLOSED, 'Marinades can be ordered every evening between 6 PM and 10 PM, for delivery the next day.');
+      }
+      const tomorrow = new Date(Date.parse(`${istToday()}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+      if (deliveryDate && deliveryDate !== tomorrow) {
+        throw ApiException.badRequest(ErrorCode.VALIDATION_FAILED, 'Marinades are delivered the next day only.');
+      }
+      deliveryDate = tomorrow;
+      if (!slot) slot = (await this.slots.listActive()).find((s) => s.kind === 'MARINADE') ?? null;
+      if (!slot || slot.kind !== 'MARINADE') {
+        throw ApiException.badRequest('SLOT_UNAVAILABLE', 'The marinade delivery slot (10:30 AM - 12:30 PM) is not available.');
+      }
+    } else if (slot && slot.kind === 'MARINADE') {
+      throw ApiException.badRequest('SLOT_UNAVAILABLE', 'That delivery slot is only for marinades.');
+    }
 
     // An ASAP order (no date, no slot) is only possible while the store is open.
     if (!deliveryDate && !slot && !this.hubs.isOpenNow(hub, istMinutesNow())) {
@@ -326,6 +347,22 @@ export class OrderPlacementService {
   }
 
   // ---------- helpers ----------
+
+  /** MEAT or MARINADE for the whole basket; the two kinds cannot be ordered together (different order and delivery times). */
+  private async basketKind(items: PlaceOrderItem[]): Promise<'MEAT' | 'MARINADE'> {
+    const rows = await this.prisma.productVariant.findMany({
+      where: { id: { in: items.map((i) => i.variantId) } },
+      select: { product: { select: { category: { select: { kind: true } } } } },
+    });
+    const kinds = new Set(rows.map((r) => r.product.category.kind));
+    if (kinds.has('MARINADE') && kinds.size > 1) {
+      throw ApiException.badRequest(
+        ErrorCode.VALIDATION_FAILED,
+        'Marinades are ordered and delivered separately. Please place meat / sea food and marinades as two orders.',
+      );
+    }
+    return kinds.has('MARINADE') ? 'MARINADE' : 'MEAT';
+  }
 
   /** Two lines for the same variant become one (quantities add up). */
   mergeItems(items: PlaceOrderItem[]): PlaceOrderItem[] {

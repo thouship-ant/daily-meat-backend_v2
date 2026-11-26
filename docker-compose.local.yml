@@ -1,0 +1,11 @@
+# Local override: the API container uses the dm-v2-pg Postgres published on the host (port 5544) and the in-memory
+# cache (no Redis). Compose's own db / redis are not started.
+#   docker compose -f docker-compose.prod.yml -f docker-compose.local.yml --env-file .env up -d minio api
+services:
+  api:
+    environment:
+      DATABASE_URL: ${LOCAL_DATABASE_URL:?set LOCAL_DATABASE_URL in .env (host.docker.internal:5544)}
+      REDIS_URL: ""
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset null

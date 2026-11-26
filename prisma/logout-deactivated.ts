@@ -15,6 +15,7 @@
  * The API caches a user for 30 seconds, so a running API stops accepting the old session within half a minute.
  * Re-running is harmless: accounts that already have no session or push token are skipped.
  */
+import '../src/env-local';
 import { Prisma, PrismaClient, Role } from '@prisma/client';
 
 const args = Object.fromEntries(

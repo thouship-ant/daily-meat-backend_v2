@@ -34,7 +34,7 @@ function flatten(errors: ValidationError[], parent = ''): Array<{ field: string;
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, validationSchema: envValidationSchema, validationOptions: { abortEarly: false, allowUnknown: true } }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env.local', '.env'], validationSchema: envValidationSchema, validationOptions: { abortEarly: false, allowUnknown: true } }),
     EventEmitterModule.forRoot({ wildcard: false, ignoreErrors: false }),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
 

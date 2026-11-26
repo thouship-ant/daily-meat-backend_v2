@@ -7,6 +7,8 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 const CACHE_PREFIX = 'catalog:';
 const CACHE_TTL = 120;
 
+export type CatalogKind = 'MEAT' | 'MARINADE';
+
 /** Only these fields of a variant are public. `costPrice` (wholesale price) must never reach customers. */
 const PUBLIC_VARIANT_SELECT = {
   id: true,
@@ -29,22 +31,24 @@ export class CatalogService {
   // Customer-facing reads (active only, cached, no cost prices)
   // =====================================================================
 
-  listCategories() {
-    return this.cache.wrap(`${CACHE_PREFIX}categories`, CACHE_TTL, () =>
+  /** `kind` defaults to MEAT so app builds that know nothing about marinades never list them. */
+  listCategories(kind: CatalogKind = 'MEAT') {
+    return this.cache.wrap(`${CACHE_PREFIX}categories:${kind}`, CACHE_TTL, () =>
       this.prisma.category.findMany({
-        where: { isActive: true },
+        where: { isActive: true, kind },
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
       }),
     );
   }
 
-  listProducts(opts: { categoryId?: string; popular?: boolean; search?: string }) {
-    const key = `${CACHE_PREFIX}products:${opts.categoryId ?? '-'}:${opts.popular ? 'p' : '-'}:${opts.search ?? '-'}`;
+  listProducts(opts: { categoryId?: string; popular?: boolean; search?: string; kind?: CatalogKind }) {
+    const kind = opts.kind ?? 'MEAT';
+    const key = `${CACHE_PREFIX}products:${kind}:${opts.categoryId ?? '-'}:${opts.popular ? 'p' : '-'}:${opts.search ?? '-'}`;
     return this.cache.wrap(key, CACHE_TTL, () =>
       this.prisma.product.findMany({
         where: {
           isActive: true,
-          category: { isActive: true },
+          category: { isActive: true, kind },
           ...(opts.categoryId ? { categoryId: opts.categoryId } : {}),
           ...(opts.popular ? { isPopular: true } : {}),
           ...(opts.search ? { name: { contains: opts.search, mode: 'insensitive' } } : {}),
@@ -77,7 +81,7 @@ export class CatalogService {
       });
       if (!top.length) return [];
       const products = await this.prisma.product.findMany({
-        where: { id: { in: top.map((t) => t.productId) }, isActive: true },
+        where: { id: { in: top.map((t) => t.productId) }, isActive: true, category: { kind: 'MEAT' } },
         include: { variants: { where: { isActive: true }, select: PUBLIC_VARIANT_SELECT } },
       });
       const byId = new Map(products.map((p) => [p.id, p]));
@@ -98,8 +102,8 @@ export class CatalogService {
   // Admin (everything, uncached, with cost prices)
   // =====================================================================
 
-  adminListCategories() {
-    return this.prisma.category.findMany({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }] });
+  adminListCategories(kind?: CatalogKind) {
+    return this.prisma.category.findMany({ ...(kind ? { where: { kind } } : {}), orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }] });
   }
 
   async createCategory(data: Prisma.CategoryCreateInput) {
@@ -142,9 +146,10 @@ export class CatalogService {
     return product;
   }
 
-  async adminListProducts(opts: { categoryId?: string; skip: number; take: number; search?: string }) {
+  async adminListProducts(opts: { categoryId?: string; skip: number; take: number; search?: string; kind?: CatalogKind }) {
     const where: Prisma.ProductWhereInput = {
       ...(opts.categoryId ? { categoryId: opts.categoryId } : {}),
+      ...(opts.kind ? { category: { kind: opts.kind } } : {}),
       ...(opts.search ? { name: { contains: opts.search, mode: 'insensitive' } } : {}),
     };
     const [items, total] = await this.prisma.$transaction([

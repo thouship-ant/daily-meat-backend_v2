@@ -24,8 +24,9 @@ export class DeliverySlotsService {
     });
   }
 
-  async listAll(): Promise<DeliverySlot[]> {
-    const slots = await this.prisma.deliverySlot.findMany();
+  /** every slot of one kind (meat slots by default, so older apps never see the marinade slot) */
+  async listAll(kind: 'MEAT' | 'MARINADE' = 'MEAT'): Promise<DeliverySlot[]> {
+    const slots = await this.prisma.deliverySlot.findMany({ where: { kind } });
     return slots.sort((a, b) => parseClock(a.startTime) - parseClock(b.startTime));
   }
 
@@ -71,13 +72,13 @@ export class DeliverySlotsService {
     return slot;
   }
 
-  async create(data: { startTime: string; endTime: string; label: string; isActive?: boolean; maxOrders?: number | null }) {
+  async create(data: { kind?: string; startTime: string; endTime: string; label: string; isActive?: boolean; maxOrders?: number | null }) {
     const slot = await this.prisma.deliverySlot.create({ data });
     await this.cache.del(KEY);
     return slot;
   }
 
-  async update(id: string, data: Partial<{ startTime: string; endTime: string; label: string; isActive: boolean; maxOrders: number | null }>) {
+  async update(id: string, data: Partial<{ kind: string; startTime: string; endTime: string; label: string; isActive: boolean; maxOrders: number | null }>) {
     const slot = await this.prisma.deliverySlot.update({ where: { id }, data });
     await this.cache.del(KEY);
     return slot;

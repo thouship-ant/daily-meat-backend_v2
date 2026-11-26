@@ -189,6 +189,8 @@ model Category {
   imageUrl  String?   @map("image_url")
   isActive  Boolean   @default(true) @map("is_active")
   sortOrder Int       @default(0) @map("sort_order")
+  /// MEAT (meat & sea food) | MARINADE (marinades: ordered 6-10 PM, delivered next day 10:30 AM - 12:30 PM)
+  kind      String    @default("MEAT") @db.VarChar(12)
   createdAt DateTime  @default(now()) @map("createdAt") @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @map("updatedAt") @db.Timestamptz(6)
   products  Product[]
@@ -328,6 +330,8 @@ model DeliverySlot {
   isActive  Boolean  @default(true) @map("is_active")
   /// Orders one hub takes for this slot on one day (NULL = no limit)
   maxOrders Int?     @map("max_orders")
+  /// MEAT | MARINADE: which kind of order the slot is for
+  kind      String   @default("MEAT") @db.VarChar(12)
   createdAt DateTime @default(now()) @map("createdAt") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updatedAt") @db.Timestamptz(6)
 

@@ -82,8 +82,8 @@ export class AdminSlotsController {
   constructor(private readonly slots: DeliverySlotsService) {}
 
   @Get()
-  list() {
-    return this.slots.listAll();
+  list(@Query('kind') kind?: string) {
+    return this.slots.listAll(kind === 'MARINADE' ? 'MARINADE' : 'MEAT');
   }
 
   @Post()

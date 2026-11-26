@@ -148,11 +148,11 @@ export class AppReminderSmsService implements OnModuleInit, OnModuleDestroy {
     const cutoff = new Date(now.getTime() - days * DAY_MS);
     const users = await this.prisma.user.findMany({
       where: {
-        role: 'CUSTOMER',
         isActive: true,
         promotionalNotifications: true,
         phone: { not: null },
         AND: [
+          { OR: [{ role: 'CUSTOMER' }, { additionalRoles: { has: 'CUSTOMER' } }] },
           { OR: [{ pushToken: null }, { pushToken: '' }] },
           { OR: [{ phone: null }, { phone: { not: { startsWith: 'del_' } } }] },
           { OR: [{ lastActiveAt: null }, { lastActiveAt: { lt: cutoff } }] },

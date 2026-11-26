@@ -2,6 +2,7 @@
  * Creates (or resets the password of) an admin account.
  *   ADMIN_EMAIL=owner@dailymeat.in ADMIN_PHONE=+919876543210 ADMIN_PASSWORD='a-strong-one' npm run seed:admin
  */
+import '../src/env-local';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 

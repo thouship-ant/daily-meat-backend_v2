@@ -90,19 +90,20 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const scope = await this.hubs.customerScope(hubId);
     const cutoff = new Date(Date.now() - (Number(inactiveDays) || 14) * 86_400_000);
     const base = {
-      role: 'CUSTOMER' as const,
       isActive: true,
       promotionalNotifications: true,
-      OR: [{ phone: null }, { phone: { not: { startsWith: 'del_' } } }],
       ...(target === 'INACTIVE' ? { orders: { none: { createdAt: { gte: cutoff } } } } : {}),
-      ...(scope ? { AND: [scope] } : {}),
     };
+    // customers include accounts whose main role is something else but that may also sign in as a customer (additional roles)
+    const isCustomer = { OR: [{ role: 'CUSTOMER' as const }, { additionalRoles: { has: 'CUSTOMER' as const } }] };
+    const notDeleted = { OR: [{ phone: null }, { phone: { not: { startsWith: 'del_' } } }] };
+    const common = [isCustomer, notDeleted, ...(scope ? [scope] : [])];
     const customers = await this.prisma.user.findMany({
-      where: { ...base, pushToken: { not: null } },
+      where: { ...base, AND: common, pushToken: { not: null } },
       select: { pushToken: true },
     });
     // customers who would get it but have no registered device (app not opened since signing in, token removed, signed out)
-    const withoutDevice = await this.prisma.user.count({ where: { ...base, OR: undefined, AND: [...(scope ? [scope] : []), { OR: [{ pushToken: null }, { pushToken: '' }] }, { OR: base.OR }] } });
+    const withoutDevice = await this.prisma.user.count({ where: { ...base, AND: [...common, { OR: [{ pushToken: null }, { pushToken: '' }] }] } });
     const tokens = new Set<string>();
     for (const c of customers) {
       for (const t of String(c.pushToken ?? '').split(',').map((x) => x.trim())) if (t) tokens.add(t);

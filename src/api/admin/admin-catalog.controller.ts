@@ -20,6 +20,7 @@ import { StorageService, MAX_IMAGE_BYTES } from '../../infrastructure/storage/st
 import { CatalogService } from '../../modules/catalog/catalog.service';
 import {
   BannerDto,
+  CatalogKindQueryDto,
   CategoryDto,
   ProductDto,
   ProductsQueryDto,
@@ -47,8 +48,8 @@ export class AdminCatalogController {
   // ---- categories ----
 
   @Get('categories')
-  categories() {
-    return this.catalog.adminListCategories();
+  categories(@Query() q: CatalogKindQueryDto) {
+    return this.catalog.adminListCategories(q.kind ?? 'MEAT');
   }
 
   @Post('categories')
@@ -81,7 +82,7 @@ export class AdminCatalogController {
   @Get('products')
   @ApiOperation({ summary: 'All products incl. inactive ones and variant cost prices' })
   async products(@Query() q: ProductsQueryDto) {
-    const { items, total } = await this.catalog.adminListProducts({ categoryId: q.categoryId, search: q.search, skip: q.skip, take: q.limit });
+    const { items, total } = await this.catalog.adminListProducts({ kind: q.categoryId ? undefined : q.kind ?? 'MEAT', categoryId: q.categoryId, search: q.search, skip: q.skip, take: q.limit });
     return new Paginated(items, total, q.page, q.limit);
   }
 

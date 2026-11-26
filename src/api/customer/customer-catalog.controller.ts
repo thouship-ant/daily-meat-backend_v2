@@ -2,7 +2,7 @@ import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators';
 import { CatalogService } from '../../modules/catalog/catalog.service';
-import { ProductQueryDto } from './dto/customer.dto';
+import { KindQueryDto, ProductQueryDto } from './dto/customer.dto';
 
 /** Browsing needs no login. Responses contain only customer-safe fields (no cost prices). */
 @ApiTags('Customer · Catalog')
@@ -13,8 +13,8 @@ export class CustomerCatalogController {
 
   @Get('categories')
   @ApiOperation({ summary: 'Active categories' })
-  categories() {
-    return this.catalog.listCategories();
+  categories(@Query() q: KindQueryDto) {
+    return this.catalog.listCategories(q.kind);
   }
 
   @Get('products')

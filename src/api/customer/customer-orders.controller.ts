@@ -29,9 +29,10 @@ export class CustomerOrdersController {
   @Get('delivery-slots')
   @ApiOperation({ summary: 'Active delivery time windows, earliest first. With ?date= (and ?pincode=) each slot says how many places are left' })
   async deliverySlots(@Query() q: SlotsQueryDto) {
-    if (!q.date) return this.slots.listActive();
+    const kind = q.kind ?? 'MEAT';
+    if (!q.date) return (await this.slots.listActive()).filter((s) => s.kind === kind);
     const hub = q.pincode ? await this.hubs.findForPincode(q.pincode) : null;
-    return this.slots.availability(q.date, hub?.id ?? null);
+    return (await this.slots.availability(q.date, hub?.id ?? null)).filter((s) => s.kind === kind);
   }
 
   @Post('orders/quote')

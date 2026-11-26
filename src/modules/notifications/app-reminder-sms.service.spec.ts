@@ -100,9 +100,10 @@ describe('App reminder SMS - who is eligible', () => {
     const { svc, where } = make();
     await svc.audience(sunday);
     const w = where();
-    expect(w).toMatchObject({ role: 'CUSTOMER', isActive: true, promotionalNotifications: true });
+    expect(w).toMatchObject({ isActive: true, promotionalNotifications: true });
     expect(JSON.stringify(w)).toContain('"pushToken":null');
-    const cutoff = new Date(w.AND[2].OR[1].lastActiveAt.lt).getTime();
+    expect(JSON.stringify(w.AND[0])).toContain('additionalRoles');
+    const cutoff = new Date(w.AND[3].OR[1].lastActiveAt.lt).getTime();
     expect(Math.round((sunday.getTime() - cutoff) / 86_400_000)).toBe(7);
   });
 });

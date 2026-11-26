@@ -269,6 +269,7 @@ export class UsersQueryDto extends PaginationDto {
 
 export class CategoryDto {
   @ApiProperty() @Transform(trim) @IsString() @Length(1, 100) name: string;
+  @ApiPropertyOptional({ enum: ['MEAT', 'MARINADE'], description: 'MARINADE = marinades (default MEAT)' }) @IsOptional() @IsIn(['MEAT', 'MARINADE']) kind?: 'MEAT' | 'MARINADE';
   @ApiPropertyOptional({ type: 'string', format: 'binary' }) @IsOptional() image?: any;
   @ApiPropertyOptional() @IsOptional() @Transform(toBool) @IsBoolean() isActive?: boolean;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
@@ -303,7 +304,12 @@ export class UpdateProductDto {
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
 }
 
+export class CatalogKindQueryDto {
+  @ApiPropertyOptional({ enum: ['MEAT', 'MARINADE'], description: 'Default MEAT (meat & sea food)' }) @IsOptional() @IsIn(['MEAT', 'MARINADE']) kind?: 'MEAT' | 'MARINADE';
+}
+
 export class ProductsQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: ['MEAT', 'MARINADE'], description: 'Default MEAT (meat & sea food)' }) @IsOptional() @IsIn(['MEAT', 'MARINADE']) kind?: 'MEAT' | 'MARINADE';
   @ApiPropertyOptional() @IsOptional() @IsUUID() categoryId?: string;
   @ApiPropertyOptional() @IsOptional() @Transform(trim) @IsString() @MaxLength(100) search?: string;
 }
@@ -367,6 +373,7 @@ export class PauseAllHubsDto {
 }
 
 export class SlotDto {
+  @ApiPropertyOptional({ enum: ['MEAT', 'MARINADE'] }) @IsOptional() @IsIn(['MEAT', 'MARINADE']) kind?: 'MEAT' | 'MARINADE';
   @ApiProperty({ example: '09:00' }) @IsString() @IsNotEmpty() @MaxLength(20) startTime: string;
   @ApiProperty({ example: '11:00' }) @IsString() @IsNotEmpty() @MaxLength(20) endTime: string;
   @ApiProperty({ example: 'Morning: 9 AM - 11 AM' }) @IsString() @IsNotEmpty() @MaxLength(100) label: string;
@@ -375,6 +382,7 @@ export class SlotDto {
 }
 
 export class UpdateSlotDto {
+  @ApiPropertyOptional({ enum: ['MEAT', 'MARINADE'] }) @IsOptional() @IsIn(['MEAT', 'MARINADE']) kind?: 'MEAT' | 'MARINADE';
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) startTime?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) endTime?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100) label?: string;

@@ -72,6 +72,8 @@ export class SwitchRoleDto {
 }
 
 export class SlotsQueryDto {
+  @ApiPropertyOptional({ enum: ['MEAT', 'MARINADE'], description: 'Slots for meat & sea food (default) or marinades' }) @IsOptional() @IsIn(['MEAT', 'MARINADE']) kind?: 'MEAT' | 'MARINADE';
+
   @ApiPropertyOptional({ example: '2026-11-13', description: 'Delivery day: adds how many places are left per slot' })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
@@ -125,7 +127,12 @@ export class ChangeOrderAddressDto {
 
 // ---------- catalog ----------
 
+export class KindQueryDto {
+  @ApiPropertyOptional({ enum: ['MEAT', 'MARINADE'], description: 'Default MEAT (meat & sea food)' }) @IsOptional() @IsIn(['MEAT', 'MARINADE']) kind?: 'MEAT' | 'MARINADE';
+}
+
 export class ProductQueryDto {
+  @ApiPropertyOptional({ enum: ['MEAT', 'MARINADE'], description: 'Default MEAT (meat & sea food)' }) @IsOptional() @IsIn(['MEAT', 'MARINADE']) kind?: 'MEAT' | 'MARINADE';
   @ApiPropertyOptional() @IsOptional() @IsUUID() categoryId?: string;
   @ApiPropertyOptional({ description: 'Only products flagged popular' })
   @IsOptional()

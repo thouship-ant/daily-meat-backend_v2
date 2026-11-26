@@ -166,11 +166,14 @@ export class PromoRemindersService implements OnModuleInit, OnModuleDestroy {
   private eligibleCustomers() {
     return this.prisma.user.findMany({
       where: {
-        role: 'CUSTOMER',
         isActive: true,
         promotionalNotifications: true,
         pushToken: { not: null },
-        OR: [{ phone: null }, { phone: { not: { startsWith: 'del_' } } }],
+        // also accounts that can sign in as a customer through their additional roles
+        AND: [
+          { OR: [{ role: 'CUSTOMER' }, { additionalRoles: { has: 'CUSTOMER' } }] },
+          { OR: [{ phone: null }, { phone: { not: { startsWith: 'del_' } } }] },
+        ],
       },
       select: { id: true, pushToken: true, createdAt: true },
     });

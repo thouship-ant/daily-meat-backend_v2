@@ -181,6 +181,40 @@ export class DriverDispatchService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /**
+   * Admin assignment must respect the driver's order limit per set too (the offer / pick flows already do).
+   * Counts what the driver already carries in each set and day, plus the orders about to be given to them.
+   */
+  async assertWithinLimit(driverId: string, orderIds: string[]) {
+    const orders = await this.prisma.order.findMany({
+      where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'ASSIGNED'] } },
+      select: { id: true, driverId: true, deliveryDate: true, deliverySlotId: true },
+    });
+    const incoming = orders.filter((o) => o.driverId !== driverId && o.deliveryDate && o.deliverySlotId);
+    if (incoming.length === 0) return;
+
+    const sets = await this.sets();
+    const { orderLimit } = await this.getAttendance(driverId);
+    const groups = new Map<string, { set: DispatchSet; date: Date; count: number }>();
+    for (const o of incoming) {
+      const set = sets.find((s) => s.slotIds.includes(o.deliverySlotId!));
+      if (!set) continue; // marinades are not part of the sets
+      const key = `${ymdOf(o.deliveryDate!)}|${set.number}`;
+      const g = groups.get(key) ?? { set, date: o.deliveryDate!, count: 0 };
+      g.count++;
+      groups.set(key, g);
+    }
+    for (const g of groups.values()) {
+      const already = await this.taken(driverId, g.set, ymdOf(g.date));
+      if (already + g.count > orderLimit) {
+        throw ApiException.badRequest(
+          'DRIVER_ORDER_LIMIT',
+          `This driver's limit is ${orderLimit} orders per set and ${already} are already assigned in set ${g.set.number}. Choose another driver or ask the driver to raise the limit.`,
+        );
+      }
+    }
+  }
+
   private async forHub(driverId: string, orders: OrderWithRelations[]) {
     const hub = await this.driverHubs.effectiveHubId(driverId);
     return hub == null ? orders : orders.filter((o) => o.hubId == null || o.hubId === hub);

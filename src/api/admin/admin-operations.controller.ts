@@ -10,6 +10,7 @@ import { NotificationsService } from '../../modules/notifications/notifications.
 import { OrderAddressService } from '../../modules/orders/order-address.service';
 import { ManualOrderService } from '../../modules/orders/manual-order.service';
 import { OrderLifecycleService } from '../../modules/orders/order-lifecycle.service';
+import { DriverDispatchService } from '../../modules/orders/driver-dispatch.service';
 import { OrderQueryService } from '../../modules/orders/order-query.service';
 import { allowedNext } from '../../modules/orders/order-status';
 import { presentOrder } from '../../modules/orders/order.presenter';
@@ -271,6 +272,7 @@ export class AdminOrdersController {
     private readonly lifecycle: OrderLifecycleService,
     private readonly manual: ManualOrderService,
     private readonly orderAddress: OrderAddressService,
+    private readonly dispatch: DriverDispatchService,
   ) {}
 
   @Get()
@@ -297,6 +299,7 @@ export class AdminOrdersController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Assign (or reassign) a driver to one or more CONFIRMED orders' })
   async assign(@Body() dto: AssignDriverDto) {
+    await this.dispatch.assertWithinLimit(dto.driverId, dto.orderIds);
     const result = await this.lifecycle.assignDriver(dto.driverId, dto.orderIds, dto.reassign);
     return new Message(`${result.assigned.length} order(s) assigned.`, result);
   }

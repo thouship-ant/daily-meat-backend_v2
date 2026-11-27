@@ -711,8 +711,8 @@ model DriverAttendance {
   attendanceDate DateTime? @map("attendance_date") @db.Date
   /// when the driver gave their present today: the earlier, the earlier they are offered orders
   presentAt      DateTime? @map("present_at") @db.Timestamptz(6)
-  /// most orders the driver takes in one set (set 1, set 2 ...); 3 until the driver sets their own
-  orderLimit     Int       @default(3) @map("order_limit")
+  /// most orders the driver takes in one set (set 1, set 2 ...); 10 until the driver sets their own
+  orderLimit     Int       @default(10) @map("order_limit")
   /// who changed this row last (the driver themselves in the app)
   updatedBy      String?   @map("updated_by") @db.Uuid
   createdAt      DateTime  @default(now()) @map("createdAt") @db.Timestamptz(6)

@@ -16,7 +16,7 @@ const OPEN_BEFORE_MIN = 45;
 /** A driver who gives their present at least this long before the set's last slot starts is in that set's queue */
 const JOIN_BEFORE_LAST_SLOT_MIN = 30;
 /** orders per set for a driver who has not set their own limit */
-const DEFAULT_ORDER_LIMIT = 3;
+const DEFAULT_ORDER_LIMIT = 10;
 /** How long a driver has to accept an offer before it goes to the next present driver */
 const OFFER_TTL_SECONDS = Number(process.env.DRIVER_OFFER_TTL_SECONDS ?? 300);
 /** A driver who declined / let an offer run out is not offered the same set again for this long */
